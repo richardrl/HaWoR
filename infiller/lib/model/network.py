@@ -133,6 +133,7 @@ class MultiHeadedAttention(nn.Module):
             # print(atten_score.shape)
             # print(mask.shape)
             # apply attention mask
+            # MAYDAY: all true mask, all inf, causes nans.
             atten_score = atten_score.masked_fill(mask, float("-inf"))
         atten_score = atten_score.softmax(dim=-1)
         atten_score = self.atten_dropout_layer(atten_score)
@@ -254,11 +255,13 @@ class TransformerModel(nn.Module):
             src: Tensor, shape [seq_len, batch_size, embedding_dim]
             src_mask: Tensor, shape [seq_len, seq_len]
 
+            atten_mask: this is the mask that disallows us from looking at the missing values / nans
         Returns:
             output Tensor of shape [seq_len, batch_size, embedding_dim]
         """
         if not data_mask is None:
             src = torch.cat([src, data_mask.expand(*src.shape[:-1], data_mask.shape[-1])], dim=-1)
+
         src = self.input_layer(src)
         output = self.pos_embedding(src)
         # output = src
@@ -266,8 +269,14 @@ class TransformerModel(nn.Module):
             assert not atten_mask is None
             output = output.permute(1, 0, 2)
             for i in range(self.nlayers):
+
+                assert not torch.any(torch.isnan(output))
                 output = self.att_layers[i](output, mask=atten_mask)
+                # note: this is where the nan happens
+                assert not torch.any(torch.isnan(output))
                 output = self.pff_layers[i](output)
+                assert not torch.any(torch.isnan(output))
+
             if self.pre_lnorm:
                 output = self.layer_norm(output)
             output = output.permute(1, 0, 2)

@@ -274,11 +274,13 @@ def hawor_infiller(args, start_idx, end_idx, frame_chunks_all):
     tid = [0, 1]
     # tid is the chilarity?
     for local_idx, hand_idx in enumerate(tid):
+        # these frames are PRESENT
         frame_chunks = frame_chunks_all[hand_idx]
 
         if len(frame_chunks) == 0:
             continue
 
+        # this block of code fills in the placeholders with the FOUND hands
         for frame_ck in frame_chunks:
             print(f"from frame {frame_ck[0]} to {frame_ck[-1]}")
 
@@ -305,13 +307,23 @@ def hawor_infiller(args, start_idx, end_idx, frame_chunks_all):
             pred_rot[[hand_idx], frame_ck] = data_world["init_root_orient"]
             pred_hand_pose[[hand_idx], frame_ck] = data_world["init_hand_pose"].flatten(-2)
             pred_betas[[hand_idx], frame_ck] = data_world["init_betas"]
+
+            assert not torch.any(torch.isnan(data_world["init_trans"]))
+            assert not torch.any(torch.isnan(data_world["init_root_orient"]))
+            assert not torch.any(torch.isnan(data_world["init_hand_pose"]))
+            assert not torch.any(torch.isnan(data_world["init_betas"]))
+            # only frame chunk is valid?
             pred_valid[[hand_idx], frame_ck] = 1
-            
+
+
+    # Note: up this point, things look fine. Zeros in places with missing actions.
         
-    # runing fillingnet for this video
+    # runninng fillingnet for this video
     frame_list = torch.tensor(list(range(pred_trans.size(1))))
     pred_valid = (pred_valid > 0).numpy()
     for local_idx, hand_idx in enumerate([1, 0]):
+        # pred valid is set to 1, for all the FOUND frame chunks
+        # this finds the missing
         missing = ~pred_valid[hand_idx]
 
         # frame_list is the full number of rgb frames
@@ -327,18 +339,16 @@ def hawor_infiller(args, start_idx, end_idx, frame_chunks_all):
         # can be a frame that was predicted by a prior prediction (it is AUTOREGRESSIVE)
         # Bottom line: ALL FRAMES ARE INFILLED.
         # Q: why is left track not infilled?
-        for frame_ck in tqdm(frame_chunks):
+        for frame_ck_idx, frame_ck in tqdm(enumerate(frame_chunks)):
             start_shift = -1
             while frame_ck[0] + start_shift >= 0 and pred_valid[:, frame_ck[0] + start_shift].sum() != 2:
                 start_shift -= 1  # Shift to find the previous valid frame as start
-            print(f"run infiller on frame {frame_ck[0] + start_shift} to frame {min(len(imgfiles)-1, frame_ck[0] + start_shift + filling_length)}")
+            print(f"run infiller on frame {frame_ck[0] + start_shift} to frame {min(len(imgfiles) - 1, frame_ck[0] + start_shift + filling_length)}")
 
             frame_start = frame_ck[0]
             filling_net_start = max(0, frame_start + start_shift)
             filling_net_end = min(len(imgfiles)-1, filling_net_start + filling_length)
 
-            import pdb
-            pdb.set_trace()
             # pred_valid: 2, num_rgb_frames
             # filling_length is the actual chunk to do motion in-betweening on
             # pred_trans: 2, num_rgb_frames. This includes all possible frames, with zeros where we have nothing.
@@ -349,6 +359,11 @@ def hawor_infiller(args, start_idx, end_idx, frame_chunks_all):
             filling_seq['hand_pose'] = pred_hand_pose[:, filling_net_start:filling_net_end].numpy()
             filling_seq['betas'] = pred_betas[:, filling_net_start:filling_net_end].numpy()
             filling_seq['valid'] = seq_valid
+
+
+            # for the left hand, filling_seq is nan for trans and betas
+            # zeros for rot, hand pose
+
             # preprocess (convert to canonical frame + slerp over missing timesteps, using the valid array)
             filling_input, transform_w_canon = filling_preprocess(filling_seq)
 
@@ -371,17 +386,37 @@ def hawor_infiller(args, start_idx, end_idx, frame_chunks_all):
 
             T, B, _ = filling_input.shape
 
-            valid = torch.from_numpy(seq_valid_padding).unsqueeze(0).all(dim=1).permute(1, 0) # (T,B)
-            valid_atten = torch.from_numpy(seq_valid_padding).unsqueeze(0).all(dim=1).unsqueeze(1) # (B,1,T)
+            # valid atten is just to handle frames that go past the episode end
+            # the below line only returns true if left AND right are present
+            # valid = torch.from_numpy(seq_valid_padding).unsqueeze(0).all(dim=1).permute(1, 0) # (T,B)
+
+            # -> select the hand and produce a fictional batch dimension
+            valid = torch.from_numpy(seq_valid_padding)[hand_idx].unsqueeze(-1).bool()
+
+            # valid_atten = torch.from_numpy(seq_valid_padding).unsqueeze(0).all(dim=1).unsqueeze(1) # (B,1,T)
+            # this might be wrong for other batch sizes
+            valid_atten = torch.from_numpy(seq_valid_padding[hand_idx]).unsqueeze(0).unsqueeze(1).bool() # (B,1,T)
+
+            # data mask handles the presence or absence of frames
             data_mask = torch.zeros((horizon, B, 1), device=device, dtype=filling_input.dtype)
             data_mask[valid] = 1
+
+            # atten_mask:
+            # if 1, then we DO remove the influence of the element.
             atten_mask = torch.ones((B, 1, horizon),
                         device=device, dtype=torch.bool)
+
+            assert not torch.all(valid_atten == False), "If all valid attention is false, then all attention is true, you remove all elements and get nans"
             atten_mask[valid_atten] = False
             atten_mask = atten_mask.unsqueeze(2).repeat(1, 1, T, 1) # (B,1,T,T)
 
+            assert not torch.any(torch.isnan(filling_input))
             output_ck = filling_model(filling_input, src_mask, data_mask, atten_mask)
+            assert not torch.any(torch.isnan(output_ck))
 
+            # if hand_idx == 0:
+            #     import pdb
+            #     pdb.set_trace()
             output_ck = output_ck.permute(1,0,2).reshape(T, 2, -1).cpu().detach() #  two hands
 
             output_ck = output_ck[:T_original]
@@ -398,7 +433,15 @@ def hawor_infiller(args, start_idx, end_idx, frame_chunks_all):
             pred_rot[:, filling_net_start:filling_net_end] = torch.from_numpy(filling_seq['rot'][:])
             pred_hand_pose[:, filling_net_start:filling_net_end] = torch.from_numpy(filling_seq['hand_pose'][:])
             pred_betas[:, filling_net_start:filling_net_end] = torch.from_numpy(filling_seq['betas'][:])
+            # pred_valid[:, filling_net_start:filling_net_end] = 1
             pred_valid[:, filling_net_start:filling_net_end] = 1
+
+    assert not torch.any(torch.isnan(pred_trans))
+    assert not torch.any(torch.isnan(pred_rot))
+
+
+    import pdb
+    pdb.set_trace()
     save_path = os.path.join(seq_folder, "world_space_res.pth")
     joblib.dump([pred_trans, pred_rot, pred_hand_pose, pred_betas, pred_valid], save_path)
     return pred_trans, pred_rot, pred_hand_pose, pred_betas, pred_valid

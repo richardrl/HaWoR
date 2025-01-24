@@ -42,6 +42,7 @@ if __name__ == '__main__':
     R_c2w_sla_all = torch.eye(3).unsqueeze(0).expand(R_w2c_sla_all.shape[0], -1, -1)
     t_c2w_sla_all = torch.zeros(R_w2c_sla_all.shape[0], 3)
 
+    # this outputs all the infilled variables
     pred_trans, pred_rot, pred_hand_pose, pred_betas, pred_valid = hawor_infiller(args, start_idx, end_idx, frame_chunks_all)
 
     # vis sequence for this video

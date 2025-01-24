@@ -151,7 +151,8 @@ class HAWOR(pl.LightningModule):
         Returns:
             Dict: Dictionary containing the regression output
         """
-
+        # -> B*T, 3, H, W
+        # don't worry, later on in the einops we rearrange to be B, T ... again, bringing back the temporal structure
         image  = batch['img'].flatten(0, 1)
         center = batch['center'].flatten(0, 1)
         scale  = batch['scale'].flatten(0, 1)
@@ -182,6 +183,7 @@ class HAWOR(pl.LightningModule):
         pred_pose, pred_shape, pred_cam = self.mano_head(feature)
         pred_rotmat_0 = rot6d_to_rotmat(pred_pose).reshape(-1, self.pose_num, 3, 3)
 
+        # Note: this is PAM in the paper
         # smpl motion module
         if self.motion_module is not None:
             bb = einops.rearrange(bbox_info, '(b t) c -> b t c', t=16)
@@ -204,6 +206,10 @@ class HAWOR(pl.LightningModule):
         s_out = self.mano.query(out)
         j3d = s_out.joints
         j2d = self.project(j3d, out['pred_cam'], center, scale, img_focal, img_center)
+
+        # joints start in the image, from 0 to crop size
+        # divide by crop size, range is +-1
+        # -.5 each axis, range is +-.5
         j2d = j2d / self.crop_size - 0.5 # norm to [-0.5, 0.5]
 
         trans_full = self.get_trans(out['pred_cam'], center, scale, img_focal, img_center)
@@ -377,6 +383,9 @@ class HAWOR(pl.LightningModule):
         return output
 
     def inference(self, imgfiles, boxes, img_focal, img_center, device='cuda', do_flip=False):
+        """
+        Logic. Loops over items with for loop until we collect 16. Runs the model on the batch of 16.
+        """
         db = TrackDatasetEval(imgfiles, boxes, img_focal=img_focal, 
                         img_center=img_center, normalization=True, dilate=1.2, do_flip=do_flip)
 
@@ -403,6 +412,8 @@ class HAWOR(pl.LightningModule):
                 continue
             elif len(items) == 16:
                 batch = default_collate(items)
+
+                # empty the list
                 items = []
             else:
                 raise NotImplementedError
@@ -413,6 +424,9 @@ class HAWOR(pl.LightningModule):
                 #     hawor_input_cv2 = vis_tensor_cv2(batch['img'][:, image_i])
                 #     cv2.imwrite(f'debug_vis_model.png', hawor_input_cv2)
                 #     print("vis")
+
+                # batch sizes
+                # 1, T=16, 3, 256, 256
                 output = self.forward(batch)
                 out = output['out']
 

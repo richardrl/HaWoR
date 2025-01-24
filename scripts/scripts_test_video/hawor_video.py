@@ -63,7 +63,7 @@ def hawor_motion_estimation(args, start_idx, end_idx, seq_folder):
             with open(os.path.join(seq_folder, 'est_focal.txt'), 'w') as file:
                 file.write(str(img_focal))
     
-    tid = np.array([tr for tr in tracks])
+    hand_ids = np.array([tr for tr in tracks])
 
     if os.path.exists(f'{seq_folder}/tracks_{start_idx}_{end_idx}/frame_chunks_all.npy'):
         print("skip hawor motion estimation")
@@ -74,8 +74,8 @@ def hawor_motion_estimation(args, start_idx, end_idx, seq_folder):
 
     left_trk = []
     right_trk = []
-    for k, idx in enumerate(tid):
-        trk = tracks[idx]
+    for k, hand_idx in enumerate(hand_ids):
+        trk = tracks[hand_idx]
 
         valid = np.array([t['det'] for t in trk])        
         is_right = np.concatenate([t['det_handedness'] for t in trk])[valid]
@@ -86,11 +86,13 @@ def hawor_motion_estimation(args, start_idx, end_idx, seq_folder):
             right_trk.extend(trk)
     left_trk = sorted(left_trk, key=lambda x: x['frame'])
     right_trk = sorted(right_trk, key=lambda x: x['frame'])
+
+
     final_tracks = {
         0: left_trk,
         1: right_trk
     }
-    tid = [0, 1]
+    hand_ids = [0, 1]
 
     img = cv2.imread(imgfiles[0])
     img_center = [img.shape[1] / 2, img.shape[0] / 2]# w/2, h/2  
@@ -121,9 +123,9 @@ def hawor_motion_estimation(args, start_idx, end_idx, seq_folder):
     faces_left = faces_right[:,[0,2,1]]
 
     frame_chunks_all = defaultdict(list)
-    for idx in tid:
-        print(f"tracklet {idx}:")
-        trk = final_tracks[idx]
+    for hand_idx in hand_ids:
+        print(f"tracklet {hand_idx}:")
+        trk = final_tracks[hand_idx]
 
         # interp bboxes
         valid = np.array([t['det'] for t in trk])
@@ -147,7 +149,7 @@ def hawor_motion_estimation(args, start_idx, end_idx, seq_folder):
             is_right = np.ones((len(boxes), 1))
 
         frame_chunks, boxes_chunks = parse_chunks(frame, boxes, min_len=1)
-        frame_chunks_all[idx] = frame_chunks
+        frame_chunks_all[hand_idx] = frame_chunks
 
         if len(frame_chunks) == 0:
             continue
@@ -159,7 +161,10 @@ def hawor_motion_estimation(args, start_idx, end_idx, seq_folder):
                 do_flip = False
             else:
                 do_flip = True
-                
+
+            # TODO: is this where we do the B, T prediction
+            # img_ck:
+            # boxes_ck
             results = model.inference(img_ck, boxes_ck, img_focal=img_focal, img_center=img_center, do_flip=do_flip)
 
             data_out = {
@@ -184,9 +189,9 @@ def hawor_motion_estimation(args, start_idx, end_idx, seq_folder):
             pred_dict={
                 k:v.tolist() for k, v in data_out.items()
             }
-            pred_path = os.path.join(seq_folder, 'cam_space', str(idx), f"{frame_ck[0]}_{frame_ck[-1]}.json")
-            if not os.path.exists(os.path.join(seq_folder, 'cam_space', str(idx))):
-                os.makedirs(os.path.join(seq_folder, 'cam_space', str(idx)))
+            pred_path = os.path.join(seq_folder, 'cam_space', str(hand_idx), f"{frame_ck[0]}_{frame_ck[-1]}.json")
+            if not os.path.exists(os.path.join(seq_folder, 'cam_space', str(hand_idx))):
+                os.makedirs(os.path.join(seq_folder, 'cam_space', str(hand_idx)))
             with open(pred_path, "w") as f:
                 json.dump(pred_dict, f, indent=1)
 
@@ -251,6 +256,14 @@ def hawor_infiller(args, start_idx, end_idx, frame_chunks_all):
     fpath = os.path.join(seq_folder, f"SLAM/hawor_slam_w_scale_{start_idx}_{end_idx}.npz")
     R_w2c_sla_all, t_w2c_sla_all, R_c2w_sla_all, t_c2w_sla_all = load_slam_cam(fpath)
 
+    print("ln257 using identity slam poses")
+    R_w2c_sla_all = torch.eye(3).unsqueeze(0).expand(R_w2c_sla_all.shape[0], -1, -1)
+    t_w2c_sla_all = torch.zeros(R_w2c_sla_all.shape[0], 3)
+
+    R_c2w_sla_all = torch.eye(3).unsqueeze(0).expand(R_w2c_sla_all.shape[0], -1, -1)
+    t_c2w_sla_all = torch.zeros(R_w2c_sla_all.shape[0], 3)
+
+
     pred_trans = torch.zeros(2, len(imgfiles), 3)
     pred_rot = torch.zeros(2, len(imgfiles), 3)
     pred_hand_pose = torch.zeros(2, len(imgfiles), 45)
@@ -258,44 +271,62 @@ def hawor_infiller(args, start_idx, end_idx, frame_chunks_all):
     pred_valid = torch.zeros((2, pred_betas.size(1)))    
 
     # camera space to world space
-    tid = [0, 1]            
-    for k, idx in enumerate(tid):
-        frame_chunks = frame_chunks_all[idx]
+    tid = [0, 1]
+    # tid is the chilarity?
+    for local_idx, hand_idx in enumerate(tid):
+        frame_chunks = frame_chunks_all[hand_idx]
 
         if len(frame_chunks) == 0:
             continue
 
         for frame_ck in frame_chunks:
-            print(f"from frame {frame_ck[0]} to {frame_ck[-1]}")                
-            pred_path = os.path.join(seq_folder, 'cam_space', str(idx), f"{frame_ck[0]}_{frame_ck[-1]}.json")
+            print(f"from frame {frame_ck[0]} to {frame_ck[-1]}")
+
+
+            pred_path = os.path.join(seq_folder, 'cam_space', str(hand_idx), f"{frame_ck[0]}_{frame_ck[-1]}.json")
+
+            # this contains the hamer like outputs
+            # so predictions in cam rframe
             with open(pred_path, "r") as f:
                 pred_dict = json.load(f)
+
+
             data_out = {
                 k:torch.tensor(v) for k, v in pred_dict.items()
-                }
+            }
 
+            # slam camera poses
             R_c2w_sla = R_c2w_sla_all[frame_ck]
             t_c2w_sla = t_c2w_sla_all[frame_ck]
 
-            data_world = cam2world_convert(R_c2w_sla, t_c2w_sla, data_out, 'right' if idx > 0 else 'left')
+            data_world = cam2world_convert(R_c2w_sla, t_c2w_sla, data_out, 'right' if hand_idx > 0 else 'left')
 
-            pred_trans[[idx], frame_ck] = data_world["init_trans"]
-            pred_rot[[idx], frame_ck] = data_world["init_root_orient"]
-            pred_hand_pose[[idx], frame_ck] = data_world["init_hand_pose"].flatten(-2)
-            pred_betas[[idx], frame_ck] = data_world["init_betas"]
-            pred_valid[[idx], frame_ck] = 1
+            pred_trans[[hand_idx], frame_ck] = data_world["init_trans"]
+            pred_rot[[hand_idx], frame_ck] = data_world["init_root_orient"]
+            pred_hand_pose[[hand_idx], frame_ck] = data_world["init_hand_pose"].flatten(-2)
+            pred_betas[[hand_idx], frame_ck] = data_world["init_betas"]
+            pred_valid[[hand_idx], frame_ck] = 1
             
         
     # runing fillingnet for this video
     frame_list = torch.tensor(list(range(pred_trans.size(1))))
     pred_valid = (pred_valid > 0).numpy()
-    for k, idx in enumerate([1, 0]):
-        missing = ~pred_valid[idx]
+    for local_idx, hand_idx in enumerate([1, 0]):
+        missing = ~pred_valid[hand_idx]
 
+        # frame_list is the full number of rgb frames
+        # missing is a boolean describing which frames are missing, for the current hand chilarity
         frame = frame_list[missing]
         frame_chunks = parse_chunks_hand_frame(frame)
 
-        print(f"run infiller on {idx2hand[idx]} hand ...")
+        print(f"run infiller on {idx2hand[hand_idx]} hand ...")
+        # HIGH LEVEL LOGIC:
+        # each frame chunk is a singleton or contiguous block of MISSING frames
+        # for each frame chunk of MISSING frames, we search for the first prior frame that is valid for BOTH hands
+        # since though we are filling the pred_... buffers incrementally, INCLUDING the valid buffer, this first prior frame
+        # can be a frame that was predicted by a prior prediction (it is AUTOREGRESSIVE)
+        # Bottom line: ALL FRAMES ARE INFILLED.
+        # Q: why is left track not infilled?
         for frame_ck in tqdm(frame_chunks):
             start_shift = -1
             while frame_ck[0] + start_shift >= 0 and pred_valid[:, frame_ck[0] + start_shift].sum() != 2:
@@ -305,6 +336,12 @@ def hawor_infiller(args, start_idx, end_idx, frame_chunks_all):
             frame_start = frame_ck[0]
             filling_net_start = max(0, frame_start + start_shift)
             filling_net_end = min(len(imgfiles)-1, filling_net_start + filling_length)
+
+            import pdb
+            pdb.set_trace()
+            # pred_valid: 2, num_rgb_frames
+            # filling_length is the actual chunk to do motion in-betweening on
+            # pred_trans: 2, num_rgb_frames. This includes all possible frames, with zeros where we have nothing.
             seq_valid = pred_valid[:, filling_net_start:filling_net_end]
             filling_seq = {}
             filling_seq['trans'] = pred_trans[:, filling_net_start:filling_net_end].numpy()
@@ -312,14 +349,16 @@ def hawor_infiller(args, start_idx, end_idx, frame_chunks_all):
             filling_seq['hand_pose'] = pred_hand_pose[:, filling_net_start:filling_net_end].numpy()
             filling_seq['betas'] = pred_betas[:, filling_net_start:filling_net_end].numpy()
             filling_seq['valid'] = seq_valid
-            # preprocess (convert to canonical + slerp)
+            # preprocess (convert to canonical frame + slerp over missing timesteps, using the valid array)
             filling_input, transform_w_canon = filling_preprocess(filling_seq)
+
             src_mask = torch.zeros((filling_length, filling_length), device=device).type(torch.bool)
             src_mask = src_mask.to(device)
             filling_input = torch.from_numpy(filling_input).unsqueeze(0).to(device).permute(1,0,2) # (seq_len, B, in_dim)
             T_original = len(filling_input)
             filling_length = 120
             if T_original < filling_length:
+                # richard: I think this should only happen at the end of the sequence
                 pad_length = filling_length - T_original
                 last_time_step = filling_input[-1, :, :]
                 padding = last_time_step.unsqueeze(0).repeat(pad_length, 1, 1)

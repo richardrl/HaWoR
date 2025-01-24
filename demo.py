@@ -22,6 +22,7 @@ if __name__ == '__main__':
     parser.add_argument("--checkpoint",  type=str, default='./weights/hawor/checkpoints/hawor.ckpt')
     parser.add_argument("--infiller_weight",  type=str, default='./weights/hawor/checkpoints/infiller.pt')
     parser.add_argument("--vis_mode",  type=str, default='world', help='cam | world')
+    parser.add_argument("--identity_slam", action="store_true", help='use identity slam poses')
     args = parser.parse_args()
 
     start_idx, end_idx, seq_folder, imgfiles = detect_track_video(args)
@@ -33,6 +34,13 @@ if __name__ == '__main__':
         hawor_slam(args, start_idx, end_idx)
     slam_path = os.path.join(seq_folder, f"SLAM/hawor_slam_w_scale_{start_idx}_{end_idx}.npz")
     R_w2c_sla_all, t_w2c_sla_all, R_c2w_sla_all, t_c2w_sla_all = load_slam_cam(slam_path)
+
+    print("ln39 using identity slam poses")
+    R_w2c_sla_all = torch.eye(3).unsqueeze(0).expand(R_w2c_sla_all.shape[0], -1, -1)
+    t_w2c_sla_all = torch.zeros(R_w2c_sla_all.shape[0], 3)
+
+    R_c2w_sla_all = torch.eye(3).unsqueeze(0).expand(R_w2c_sla_all.shape[0], -1, -1)
+    t_c2w_sla_all = torch.zeros(R_w2c_sla_all.shape[0], 3)
 
     pred_trans, pred_rot, pred_hand_pose, pred_betas, pred_valid = hawor_infiller(args, start_idx, end_idx, frame_chunks_all)
 

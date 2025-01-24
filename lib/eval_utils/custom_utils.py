@@ -8,30 +8,57 @@ from scipy.interpolate import interp1d
 
 
 def cam2world_convert(R_c2w_sla, t_c2w_sla, data_out, handedness):
+    """
+    data_out: contains predictions in camera frame
+    """
+    # wrist wrt to camera
     init_rot_mat = copy.deepcopy(data_out["init_root_orient"])
+
+    # -> wrist wrt to world
     init_rot_mat = torch.einsum("tij,btjk->btik", R_c2w_sla, init_rot_mat)
-    init_rot = rotation_matrix_to_angle_axis(init_rot_mat)
-    init_rot_quat = angle_axis_to_quaternion(init_rot)
+
+    init_rot_aa = rotation_matrix_to_angle_axis(init_rot_mat)
+    init_rot_quat = angle_axis_to_quaternion(init_rot_aa)
     # data_out["init_root_orient"] = rotation_matrix_to_angle_axis(data_out["init_root_orient"])
     # data_out["init_hand_pose"] = rotation_matrix_to_angle_axis(data_out["init_hand_pose"])
+
+    # wrist wrt to camera again
     data_out_init_root_orient = rotation_matrix_to_angle_axis(data_out["init_root_orient"])
+
     data_out_init_hand_pose = rotation_matrix_to_angle_axis(data_out["init_hand_pose"])
 
+    # wrist wrt to camera
     init_trans = data_out["init_trans"] # (B, T, 3)
     if handedness == "right":
+        # -> outputs is in camera frame
         outputs = run_mano(data_out["init_trans"], data_out_init_root_orient, data_out_init_hand_pose, betas=data_out["init_betas"])
     elif handedness == "left":
         outputs = run_mano_left(data_out["init_trans"], data_out_init_root_orient, data_out_init_hand_pose, betas=data_out["init_betas"])
+
+    # root joint wrt to cam expressed in camera
+    # its wrt to cam because we applied the translation
     root_loc = outputs["joints"][..., 0, :].cpu()  # (B, T, 3)
+
+
+    # wrist wrt to camera expressed in camera minus root joint wrt to camera expressed in camera
+    # wrist wrt to camera expressed in camera plus camera wrt to root joint expressed in camera =
+    # wrist wrt to root joint expressed in camera
+    # it should be a constant but there are imperfections due to slam error
+    # gives:
     offset = init_trans - root_loc  # It is a constant, no matter what the rotation is.
+
+    # -> wrist wrt to root joint
     init_trans = (
-        torch.einsum("tij,btj->bti", R_c2w_sla, root_loc)
-        + t_c2w_sla[None, :]
-        + offset
+        torch.einsum("tij,btj->bti", R_c2w_sla, root_loc) # cam2world applied to root joint wrt to cam = root joint wrt to cam expressed in world
+        + t_c2w_sla[None, :] # cam wrt to world expressed in world
+        + offset # wrist wrt to root joint expressed in world
     )
 
+    # the last two give:
+    # wrist wrt to world expressed in cam
+
     data_world = {
-        "init_root_orient": init_rot, # (B, T, 3)
+        "init_root_orient": init_rot_aa, # (B, T, 3)
         "init_hand_pose": data_out_init_hand_pose, # (B, T, 15, 3)
         "init_trans": init_trans,  # (B, T, 3)
         "init_betas": data_out["init_betas"]  # (B, T, 10)
@@ -73,9 +100,19 @@ def load_slam_cam(fpath):
     print(f"Loading cameras from {fpath}...")
     pred_cam = dict(np.load(fpath, allow_pickle=True))
     pred_traj = pred_cam['traj']
+
+    # -> timesteps, 3
+    # the sequence of translations of camera wrt to world
+    # where world is the first camera pose
     t_c2w_sla = torch.tensor(pred_traj[:, :3]) * pred_cam['scale']
+
+    # predicted camera quaternion
     pred_camq = torch.tensor(pred_traj[:, 3:])
+
+    # cam wrt to world
     R_c2w_sla = quaternion_to_matrix(pred_camq[:,[3,0,1,2]])
+
+    # world wrt to cam
     R_w2c_sla = R_c2w_sla.transpose(-1, -2)
     t_w2c_sla = -torch.einsum("bij,bj->bi", R_w2c_sla, t_c2w_sla)
     return R_w2c_sla, t_w2c_sla, R_c2w_sla, t_c2w_sla

@@ -144,7 +144,6 @@ def world2canonical_convert(R_c2w_sla, t_c2w_sla, data_out, handedness):
     return data_world
 
 def filling_preprocess(item):
-
     num_joints = 15
 
     global_trans = item['trans'] # (2, seq_len, 3)
@@ -154,6 +153,8 @@ def filling_preprocess(item):
     valid = item['valid'] # (2, seq_len)
 
     N, T, _ = global_trans.shape
+
+    # global rot is global orient: wrist wrt to world. Maps points from canonical (wrist) to the world.
     R_canonical2world_left_aa = torch.from_numpy(global_rot[0, 0])
     R_canonical2world_right_aa = torch.from_numpy(global_rot[1, 0])
     R_world2canonical_left = angle_axis_to_rotation_matrix(R_canonical2world_left_aa).t()
@@ -247,7 +248,6 @@ def filling_preprocess(item):
         "R_canon2w_right": R_canon2w_right,
         "t_canon2w_right": t_canon2w_right,
     }
-    
     return global_pose_vec_input, transform_w_canon
 
 def custom_rot6d_to_rotmat(rot6d):

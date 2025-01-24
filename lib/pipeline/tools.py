@@ -19,7 +19,6 @@ else:
 
 
 def detect_track(imgfiles, thresh=0.5):
-    
     hand_det_model = YOLO('./weights/external/detector.pt')
 
     # Run
@@ -110,12 +109,18 @@ def parse_chunks_hand_frame(frame):
      If a segment is less than 16 frames, we get rid of it for now. 
      """
     frame_chunks = []
+
+    # by getting the differences between successive frames, we calculate the number of steps per chunk
+    # most of the time, step will be 1, because we have contiguous frames
     step = frame[1:] - frame[:-1]
     step = np.concatenate([[0], step])
+
+    # when the step is not 1, we have multiple missing frames
     breaks = np.where(step != 1)[0]
 
     start = 0
     for bk in breaks:
+        # note: the breaks are local indices in the frame buffer
         f_chunk = frame[start:bk]
         start = bk
         if len(f_chunk) > 0:
@@ -126,4 +131,7 @@ def parse_chunks_hand_frame(frame):
             if len(f_chunk) > 0:
                 frame_chunks.append(f_chunk)
 
+    # TLDR:
+    # this function should cover the ENTIRE sequence, by combining single step frames into contiguous chunks
+    # if a frame is by itself, it is its own "chunk"
     return frame_chunks

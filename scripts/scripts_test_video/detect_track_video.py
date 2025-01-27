@@ -17,33 +17,37 @@ def extract_frames(video_path, output_folder):
     command = [
         'ffmpeg',               
         '-i', video_path,       
-        '-vf', 'fps=30',         
+        '-vf', 'fps=30', '-qscale:v', '2',
         '-start_number', '0',
-        os.path.join(output_folder, '%04d.jpg')  
+        os.path.join(output_folder, '%06d.jpg')
     ]
-
     subprocess.run(command, check=True)
 
 
 def detect_track_video(args):
-    file = args.video_path
-    root = os.path.dirname(file)
-    seq = os.path.basename(file).split('.')[0]
-
-    seq_folder = f'{root}/{seq}'
-    img_folder = f'{seq_folder}/extracted_images'
-    os.makedirs(seq_folder, exist_ok=True)
-    os.makedirs(img_folder, exist_ok=True)
-    print(f'Running detect_track on {file} ...')
-
-    ##### Extract Frames #####
-    imgfiles = natsorted(glob(f'{img_folder}/*.jpg'))
-    # print(imgfiles[:10])
-    if len(imgfiles) > 0:
-        print("Skip extracting frames")
+    if args.seq_folder:
+        seq_folder = args.seq_folder
+        img_folder = f'{seq_folder}/extracted_images'
+        imgfiles = natsorted(glob(f'{img_folder}/*.jpg'))
     else:
-        _ = extract_frames(file, img_folder)
-    imgfiles = natsorted(glob(f'{img_folder}/*.jpg'))
+        file = args.video_path
+        root = os.path.dirname(file)
+        seq = os.path.basename(file).split('.')[0]
+
+        seq_folder = f'{root}/{seq}'
+        img_folder = f'{seq_folder}/extracted_images'
+        os.makedirs(seq_folder, exist_ok=True)
+        os.makedirs(img_folder, exist_ok=True)
+        print(f'Running detect_track on {file} ...')
+
+        ##### Extract Frames #####
+        imgfiles = natsorted(glob(f'{img_folder}/*.jpg'))
+        # print(imgfiles[:10])
+        if len(imgfiles) > 0:
+            print("Skip extracting frames")
+        else:
+            _ = extract_frames(file, img_folder)
+        imgfiles = natsorted(glob(f'{img_folder}/*.jpg'))
 
     ##### Detection + Track #####
     print('Detect and Track ...')

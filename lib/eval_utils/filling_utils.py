@@ -230,6 +230,8 @@ def filling_preprocess(item):
 
 
     # concat to (T, concat_dim)
+    # collapses along feature dimension (dimension 3)
+    # then reshapes along hand dimension (dimension 1 after transpose). Thus, we have time x dimension 1.
     global_pose_vec_input = np.concatenate((global_trans_lerped, betas_lerped, global_rot_slerped_rot6d, hand_pose_slerped_rot6d), axis=-1).transpose(1, 0, 2).reshape(T, -1)
 
     R_canon2w_left = R_world2canonical_left.transpose(-1, -2)

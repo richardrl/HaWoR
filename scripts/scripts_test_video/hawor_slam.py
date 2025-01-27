@@ -44,17 +44,22 @@ def split_list_by_interval(lst, interval=1000):
     return start_indices, end_indices, split_lists
 
 def hawor_slam(args, start_idx, end_idx):
-    # File and folders
-    file = args.video_path
-    video_root = os.path.dirname(file)
-    video = os.path.basename(file).split('.')[0]
-    seq_folder = os.path.join(video_root, video)
-    os.makedirs(seq_folder, exist_ok=True)
-    video_folder = os.path.join(video_root, video)
+    if args.seq_folder:
+        video_folder = args.seq_folder
+    else:
+        # File and folders
+        file = args.video_path
+        video_root = os.path.dirname(file)
+        video = os.path.basename(file).split('.')[0]
+        seq_folder = os.path.join(video_root, video)
+        os.makedirs(seq_folder, exist_ok=True)
+        video_folder = os.path.join(video_root, video)
+
 
     img_folder = f'{video_folder}/extracted_images'
     imgfiles = natsorted(glob(f'{img_folder}/*.jpg'))
 
+    # we got here
     first_img = cv2.imread(imgfiles[0])
     height, width, _ = first_img.shape
     
@@ -85,6 +90,7 @@ def hawor_slam(args, start_idx, end_idx):
     
     # Droid-slam with masking
     droid, traj = run_slam(imgfiles, masks=masks, calib=calib)
+
     n = droid.video.counter.value
     tstamp = droid.video.tstamp.cpu().int().numpy()[:n]
     disps = droid.video.disps_up.cpu().numpy()[:n]
@@ -130,6 +136,8 @@ def hawor_slam(args, start_idx, end_idx):
     median_s = np.median(scales_)
     print(f"estimated scale: {median_s}")
 
+    if args.seq_folder:
+        seq_folder = args.seq_folder
     # Save results
     os.makedirs(f"{seq_folder}/SLAM", exist_ok=True)
     save_path = f'{seq_folder}/SLAM/hawor_slam_w_scale_{start_idx}_{end_idx}.npz'

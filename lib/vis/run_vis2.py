@@ -6,6 +6,8 @@ import trimesh
 
 import lib.vis.viewer as viewer_utils
 from lib.vis.wham_tools.tools import checkerboard_geometry
+from scipy.spatial.transform import Rotation
+
 
 def camera_marker_geometry(radius, height):
     vertices = np.array(
@@ -37,7 +39,7 @@ def camera_marker_geometry(radius, height):
 
 
 def run_vis2_on_video(res_dict, res_dict2, output_pth, focal_length, image_names, R_c2w=None, t_c2w=None, interactive=True):
-    
+
     img0 = cv2.imread(image_names[0])
     height, width, _ = img0.shape
 
@@ -82,7 +84,7 @@ def run_vis2_on_video(res_dict, res_dict2, output_pth, focal_length, image_names
         color_idx += 1
     
     v, f, vc, fc = checkerboard_geometry(length=100, c1=0, c2=0, up="z")
-    v[:, 2] -= 2 # z plane
+    v[:, 2] -= 4 # z plane
     gound_meshes = {
         "v3d": v,
         "f3d": f,
@@ -94,12 +96,14 @@ def run_vis2_on_video(res_dict, res_dict2, output_pth, focal_length, image_names
     vis_dict["ground"] = gound_meshes
 
     num_frames = len(world_mano['vertices'][_id])
-    Rt = np.zeros((num_frames, 3, 4))
-    Rt[:, :3, :3] = R_c2w[:num_frames]
-    Rt[:, :3, 3] = t_c2w[:num_frames]
+    actualcam_Rt = np.zeros((num_frames, 3, 4))
+    actualcam_Rt[:, :3, :3] = R_c2w[:num_frames]
+    actualcam_Rt[:, :3, 3] = t_c2w[:num_frames]
 
     verts, faces, face_colors = camera_marker_geometry(0.05, 0.1)
-    verts = np.einsum("tij,nj->tni", Rt[:, :3, :3], verts) + Rt[:, None, :3, 3]
+
+    # apply cam to world, get verts in world
+    verts = np.einsum("tij,nj->tni", actualcam_Rt[:, :3, :3], verts) + actualcam_Rt[:, None, :3, 3]
     camera_meshes = {
         "v3d": verts,
         "f3d": faces,
@@ -113,23 +117,51 @@ def run_vis2_on_video(res_dict, res_dict2, output_pth, focal_length, image_names
     side_source = torch.tensor([0.463, -0.478, 2.456])
     side_target = torch.tensor([0.026, -0.481, -3.184])
     up = torch.tensor([1.0, 0.0, 0.0])
+
+    # bodyframe_rotation = Rotation.from_euler("Z", 90, degrees=True).as_matrix()
+    #
+    # tmp_rot = np.eye(4)
+    # tmp_rot[:3, :3] = bodyframe_rotation
+
     view_camera = lookat_matrix(side_source, side_target, up)
     viewer_Rt = np.tile(view_camera[:3, :4], (num_frames, 1, 1))
 
+    # This is where the temporal structure comes from
+    # vis_dict['hand_0']['v3d'] is of shape T, 778, 3
     meshes = viewer_utils.construct_viewer_meshes(
         vis_dict, draw_edges=False, flat_shading=False
     )
 
     vis_h, vis_w = (height, width)
-    K = np.array(
+    viewer_K = np.array(
         [
             [1000, 0, vis_w / 2],
             [0, 1000, vis_h / 2],
             [0, 0, 1]
         ]
     )
-    
-    data = viewer_utils.ViewerData(viewer_Rt, K, vis_w, vis_h)
+
+    actualcam_K = np.array(
+        [
+            [focal_length, 0, vis_w / 2],
+            [0, focal_length, vis_h / 2],
+            [0, 0, 1]
+        ]
+    )
+    #
+    # bodyframe_rotation = Rotation.from_euler("Z", 180, degrees=True).as_matrix()
+    #
+    # tmp_rot = np.eye(4)
+    # tmp_rot[:3, :3] = bodyframe_rotation
+    #
+    # tmp = np.tile(np.eye(4), (actualcam_Rt.shape[0], 1, 1))
+    # tmp[:, :3, :] = actualcam_Rt
+    #
+    # tmp = tmp @ tmp_rot
+
+    # data = viewer_utils.ViewerData(tmp[:, :3, :], actualcam_K, vis_w, vis_h, imgnames=image_names)
+    #
+    data = viewer_utils.ViewerData(viewer_Rt, viewer_K, vis_w, vis_h, imgnames=image_names)
     batch = (meshes, data)
 
     if interactive:
@@ -143,7 +175,6 @@ def run_vis2_on_video(res_dict, res_dict2, output_pth, focal_length, image_names
         return os.path.join(output_pth, 'aitviewer', "video_0.mp4")
 
 def run_vis2_on_video_cam(res_dict, res_dict2, output_pth, focal_length, image_names, R_w2c=None, t_w2c=None):
-    
     img0 = cv2.imread(image_names[0])
     height, width, _ = img0.shape
 

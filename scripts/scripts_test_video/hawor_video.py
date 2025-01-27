@@ -44,10 +44,15 @@ def hawor_motion_estimation(args, start_idx, end_idx, seq_folder):
     model = model.to(device)
     model.eval()
 
-    file = args.video_path
-    video_root = os.path.dirname(file)
-    video = os.path.basename(file).split('.')[0]
-    img_folder = f"{video_root}/{video}/extracted_images"
+    if args.seq_folder:
+        img_folder = os.path.join(args.seq_folder, "extracted_images")
+        video = os.path.basename(args.seq_folder)
+    else:
+        file = args.video_path
+        video_root = os.path.dirname(file)
+        video = os.path.basename(file).split('.')[0]
+        img_folder = f"{video_root}/{video}/extracted_images"
+
     imgfiles = np.array(natsorted(glob(f'{img_folder}/*.jpg')))
 
     tracks = np.load(f'{seq_folder}/tracks_{start_idx}_{end_idx}/model_tracks.npy', allow_pickle=True).item()
@@ -241,11 +246,15 @@ def hawor_infiller(args, start_idx, end_idx, frame_chunks_all):
     filling_model.load_state_dict(ckpt['transformer_encoder_state_dict'])
     filling_model.eval()
 
-    file = args.video_path
-    video_root = os.path.dirname(file)
-    video = os.path.basename(file).split('.')[0]
-    seq_folder = os.path.join(video_root, video)
-    img_folder = f"{video_root}/{video}/extracted_images"
+    if args.seq_folder:
+        seq_folder = args.seq_folder
+        img_folder = os.path.join(seq_folder, "extracted_images")
+    else:
+        file = args.video_path
+        video_root = os.path.dirname(file)
+        video = os.path.basename(file).split('.')[0]
+        seq_folder = os.path.join(video_root, video)
+        img_folder = f"{video_root}/{video}/extracted_images"
 
     # Previous steps
     imgfiles = np.array(natsorted(glob(f'{img_folder}/*.jpg')))
@@ -253,15 +262,41 @@ def hawor_infiller(args, start_idx, end_idx, frame_chunks_all):
     idx2hand = ['left', 'right']
     filling_length = 120
 
-    fpath = os.path.join(seq_folder, f"SLAM/hawor_slam_w_scale_{start_idx}_{end_idx}.npz")
-    R_w2c_sla_all, t_w2c_sla_all, R_c2w_sla_all, t_c2w_sla_all = load_slam_cam(fpath)
 
-    print("ln257 using identity slam poses")
-    R_w2c_sla_all = torch.eye(3).unsqueeze(0).expand(R_w2c_sla_all.shape[0], -1, -1)
-    t_w2c_sla_all = torch.zeros(R_w2c_sla_all.shape[0], 3)
+    if args.slam_mode == 0:
+        # run slam
+        print(f"using img focal {img_focal}")
+        slam_path = os.path.join(seq_folder, f"SLAM/hawor_slam_w_scale_{start_idx}_{end_idx}.npz")
+        if not os.path.exists(slam_path):
+            hawor_slam(args, start_idx, end_idx)
+        slam_path = os.path.join(seq_folder, f"SLAM/hawor_slam_w_scale_{start_idx}_{end_idx}.npz")
+        R_w2c_sla_all, t_w2c_sla_all, R_c2w_sla_all, t_c2w_sla_all = load_slam_cam(slam_path)
+    elif args.slam_mode == 1:
+        # load slam from egoexo file
+        from misc_util import get_cam_wrt_world_from_olcsv
+        camposes = get_cam_wrt_world_from_olcsv(len(imgfiles), os.path.basename(args.seq_folder))
 
-    R_c2w_sla_all = torch.eye(3).unsqueeze(0).expand(R_w2c_sla_all.shape[0], -1, -1)
-    t_c2w_sla_all = torch.zeros(R_w2c_sla_all.shape[0], 3)
+        R_c2w_sla_all = torch.from_numpy(np.array([_[1] for _ in camposes])).to(torch.float32)
+        t_c2w_sla_all = torch.from_numpy(np.stack([_[0] for _ in camposes]).astype(np.float32)).to(torch.float32)
+        R_w2c_sla_all = None
+        t_w2c_sla_all = None
+    else:
+        print("ln39 using identity slam poses")
+        R_w2c_sla_all = torch.eye(3).unsqueeze(0).expand(len(image_files), -1, -1)
+        t_w2c_sla_all = torch.zeros(len(image_files), 3)
+
+        R_c2w_sla_all = torch.eye(3).unsqueeze(0).expand(len(image_files), -1, -1)
+        t_c2w_sla_all = torch.zeros(len(image_files), 3)
+    #
+    # fpath = os.path.join(seq_folder, f"SLAM/hawor_slam_w_scale_{start_idx}_{end_idx}.npz")
+    # R_w2c_sla_all, t_w2c_sla_all, R_c2w_sla_all, t_c2w_sla_all = load_slam_cam(fpath)
+    #
+    # print("ln257 using identity slam poses")
+    # R_w2c_sla_all = torch.eye(3).unsqueeze(0).expand(R_w2c_sla_all.shape[0], -1, -1)
+    # t_w2c_sla_all = torch.zeros(R_w2c_sla_all.shape[0], 3)
+    #
+    # R_c2w_sla_all = torch.eye(3).unsqueeze(0).expand(R_w2c_sla_all.shape[0], -1, -1)
+    # t_c2w_sla_all = torch.zeros(R_w2c_sla_all.shape[0], 3)
 
 
     pred_trans = torch.zeros(2, len(imgfiles), 3)
@@ -275,17 +310,17 @@ def hawor_infiller(args, start_idx, end_idx, frame_chunks_all):
     # tid is the chilarity?
     for local_idx, hand_idx in enumerate(tid):
         # these frames are PRESENT
-        frame_chunks = frame_chunks_all[hand_idx]
+        missing_frame_chunks = frame_chunks_all[hand_idx]
 
-        if len(frame_chunks) == 0:
+        if len(missing_frame_chunks) == 0:
             continue
 
         # this block of code fills in the placeholders with the FOUND hands
-        for frame_ck in frame_chunks:
-            print(f"from frame {frame_ck[0]} to {frame_ck[-1]}")
+        for missing_frame_ck in missing_frame_chunks:
+            print(f"from frame {missing_frame_ck[0]} to {missing_frame_ck[-1]}")
 
 
-            pred_path = os.path.join(seq_folder, 'cam_space', str(hand_idx), f"{frame_ck[0]}_{frame_ck[-1]}.json")
+            pred_path = os.path.join(seq_folder, 'cam_space', str(hand_idx), f"{missing_frame_ck[0]}_{missing_frame_ck[-1]}.json")
 
             # this contains the hamer like outputs
             # so predictions in cam rframe
@@ -298,22 +333,22 @@ def hawor_infiller(args, start_idx, end_idx, frame_chunks_all):
             }
 
             # slam camera poses
-            R_c2w_sla = R_c2w_sla_all[frame_ck]
-            t_c2w_sla = t_c2w_sla_all[frame_ck]
+            R_c2w_sla = R_c2w_sla_all[missing_frame_ck]
+            t_c2w_sla = t_c2w_sla_all[missing_frame_ck]
 
             data_world = cam2world_convert(R_c2w_sla, t_c2w_sla, data_out, 'right' if hand_idx > 0 else 'left')
 
-            pred_trans[[hand_idx], frame_ck] = data_world["init_trans"]
-            pred_rot[[hand_idx], frame_ck] = data_world["init_root_orient"]
-            pred_hand_pose[[hand_idx], frame_ck] = data_world["init_hand_pose"].flatten(-2)
-            pred_betas[[hand_idx], frame_ck] = data_world["init_betas"]
+            pred_trans[[hand_idx], missing_frame_ck] = data_world["init_trans"]
+            pred_rot[[hand_idx], missing_frame_ck] = data_world["init_root_orient"]
+            pred_hand_pose[[hand_idx], missing_frame_ck] = data_world["init_hand_pose"].flatten(-2)
+            pred_betas[[hand_idx], missing_frame_ck] = data_world["init_betas"]
 
             assert not torch.any(torch.isnan(data_world["init_trans"]))
             assert not torch.any(torch.isnan(data_world["init_root_orient"]))
             assert not torch.any(torch.isnan(data_world["init_hand_pose"]))
             assert not torch.any(torch.isnan(data_world["init_betas"]))
             # only frame chunk is valid?
-            pred_valid[[hand_idx], frame_ck] = 1
+            pred_valid[[hand_idx], missing_frame_ck] = 1
 
 
     # Note: up this point, things look fine. Zeros in places with missing actions.
@@ -329,7 +364,7 @@ def hawor_infiller(args, start_idx, end_idx, frame_chunks_all):
         # frame_list is the full number of rgb frames
         # missing is a boolean describing which frames are missing, for the current hand chilarity
         frame = frame_list[missing]
-        frame_chunks = parse_chunks_hand_frame(frame)
+        missing_frame_chunks = parse_chunks_hand_frame(frame)
 
         print(f"run infiller on {idx2hand[hand_idx]} hand ...")
         # HIGH LEVEL LOGIC:
@@ -339,13 +374,13 @@ def hawor_infiller(args, start_idx, end_idx, frame_chunks_all):
         # can be a frame that was predicted by a prior prediction (it is AUTOREGRESSIVE)
         # Bottom line: ALL FRAMES ARE INFILLED.
         # Q: why is left track not infilled?
-        for frame_ck_idx, frame_ck in tqdm(enumerate(frame_chunks)):
+        for missing_frame_ck_idx, missing_frame_ck in tqdm(enumerate(missing_frame_chunks)):
             start_shift = -1
-            while frame_ck[0] + start_shift >= 0 and pred_valid[:, frame_ck[0] + start_shift].sum() != 2:
+            while missing_frame_ck[0] + start_shift >= 0 and pred_valid[:, missing_frame_ck[0] + start_shift].sum() != 2:
                 start_shift -= 1  # Shift to find the previous valid frame as start
-            print(f"run infiller on frame {frame_ck[0] + start_shift} to frame {min(len(imgfiles) - 1, frame_ck[0] + start_shift + filling_length)}")
+            print(f"run infiller on frame {missing_frame_ck[0] + start_shift} to frame {min(len(imgfiles) - 1, missing_frame_ck[0] + start_shift + filling_length)}")
 
-            frame_start = frame_ck[0]
+            frame_start = missing_frame_ck[0]
             filling_net_start = max(0, frame_start + start_shift)
             filling_net_end = min(len(imgfiles)-1, filling_net_start + filling_length)
 
@@ -411,6 +446,7 @@ def hawor_infiller(args, start_idx, end_idx, frame_chunks_all):
             atten_mask = atten_mask.unsqueeze(2).repeat(1, 1, T, 1) # (B,1,T,T)
 
             assert not torch.any(torch.isnan(filling_input))
+
             output_ck = filling_model(filling_input, src_mask, data_mask, atten_mask)
             assert not torch.any(torch.isnan(output_ck))
 
@@ -422,8 +458,10 @@ def hawor_infiller(args, start_idx, end_idx, frame_chunks_all):
             output_ck = output_ck[:T_original]
 
             filling_output = filling_postprocess(output_ck, transform_w_canon)
-
             # repalce the missing prediciton with infiller output
+
+            # filling_output['trans']: 2, num_frames, 3
+            # seq_valid: 2, num_frames
             filling_seq['trans'][~seq_valid] = filling_output['trans'][~seq_valid]
             filling_seq['rot'][~seq_valid] = filling_output['rot'][~seq_valid]
             filling_seq['hand_pose'][~seq_valid] = filling_output['hand_pose'][~seq_valid]
@@ -440,8 +478,6 @@ def hawor_infiller(args, start_idx, end_idx, frame_chunks_all):
     assert not torch.any(torch.isnan(pred_rot))
 
 
-    import pdb
-    pdb.set_trace()
     save_path = os.path.join(seq_folder, "world_space_res.pth")
     joblib.dump([pred_trans, pred_rot, pred_hand_pose, pred_betas, pred_valid], save_path)
     return pred_trans, pred_rot, pred_hand_pose, pred_betas, pred_valid

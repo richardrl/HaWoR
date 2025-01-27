@@ -269,8 +269,9 @@ class TransformerModel(nn.Module):
             assert not atten_mask is None
             output = output.permute(1, 0, 2)
             for i in range(self.nlayers):
-
                 assert not torch.any(torch.isnan(output))
+                # output: B, filling_length, full_dim
+                # atten_mask: B, 1, filling_length, filling_length
                 output = self.att_layers[i](output, mask=atten_mask)
                 # note: this is where the nan happens
                 assert not torch.any(torch.isnan(output))

@@ -140,7 +140,9 @@ def run_slam(imagedir, masks, calib=None, depth=None, stride=1,
     if calib is None:
         calib = est_calib(imagedir)
 
-    for (t, image, intrinsics) in tqdm(image_stream(imagedir, calib, stride)):
+    img_stream_obj = image_stream(imagedir, calib, stride)
+
+    for (t, image, intrinsics) in tqdm(img_stream_obj, total=len(imagedir)):
 
         if droid is None:
             args.image_size = [image.shape[2], image.shape[3]]

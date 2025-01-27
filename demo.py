@@ -17,34 +17,63 @@ from lib.vis.run_vis2 import run_vis2_on_video, run_vis2_on_video_cam
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     parser.add_argument("--img_focal", type=float)
-    parser.add_argument("--video_path", type=str, default='example/video_0.mp4')
+    parser.add_argument("--video_path", type=str, default="")
+    parser.add_argument("--seq_folder", type=str, help="Skip video decoding step and use folder of images")
     parser.add_argument("--input_type", type=str, default='file')
     parser.add_argument("--checkpoint",  type=str, default='./weights/hawor/checkpoints/hawor.ckpt')
     parser.add_argument("--infiller_weight",  type=str, default='./weights/hawor/checkpoints/infiller.pt')
     parser.add_argument("--vis_mode",  type=str, default='world', help='cam | world')
     parser.add_argument("--identity_slam", action="store_true", help='use identity slam poses')
+    parser.add_argument('--slam_mode',
+                        type=int,
+                        choices=[0, 1, 2],
+                        default=0,
+                        help='Set the level (0, 1, or 2)')
+
     args = parser.parse_args()
 
     start_idx, end_idx, seq_folder, imgfiles = detect_track_video(args)
 
     frame_chunks_all, img_focal = hawor_motion_estimation(args, start_idx, end_idx, seq_folder)
 
-    slam_path = os.path.join(seq_folder, f"SLAM/hawor_slam_w_scale_{start_idx}_{end_idx}.npz")
-    if not os.path.exists(slam_path):
-        hawor_slam(args, start_idx, end_idx)
-    slam_path = os.path.join(seq_folder, f"SLAM/hawor_slam_w_scale_{start_idx}_{end_idx}.npz")
-    R_w2c_sla_all, t_w2c_sla_all, R_c2w_sla_all, t_c2w_sla_all = load_slam_cam(slam_path)
+    if args.img_focal:
+        img_focal = args.img_focal
 
-    print("ln39 using identity slam poses")
-    R_w2c_sla_all = torch.eye(3).unsqueeze(0).expand(R_w2c_sla_all.shape[0], -1, -1)
-    t_w2c_sla_all = torch.zeros(R_w2c_sla_all.shape[0], 3)
+    if args.slam_mode == 0:
+        # run slam
+        print(f"using img focal {img_focal}")
+        slam_path = os.path.join(seq_folder, f"SLAM/hawor_slam_w_scale_{start_idx}_{end_idx}.npz")
+        if not os.path.exists(slam_path):
+            hawor_slam(args, start_idx, end_idx)
+        slam_path = os.path.join(seq_folder, f"SLAM/hawor_slam_w_scale_{start_idx}_{end_idx}.npz")
+        R_w2c_sla_all, t_w2c_sla_all, R_c2w_sla_all, t_c2w_sla_all = load_slam_cam(slam_path)
+    elif args.slam_mode == 1:
+        # load slam from egoexo file
+        from misc_util import get_cam_wrt_world_from_olcsv
+        camposes = get_cam_wrt_world_from_olcsv(len(imgfiles), os.path.basename(args.seq_folder))
 
-    R_c2w_sla_all = torch.eye(3).unsqueeze(0).expand(R_w2c_sla_all.shape[0], -1, -1)
-    t_c2w_sla_all = torch.zeros(R_w2c_sla_all.shape[0], 3)
+        R_c2w_sla_all = torch.from_numpy(np.asarray([_[1] for _ in camposes]).copy()).to(torch.float32)
+        t_c2w_sla_all = torch.from_numpy(np.stack([_[0] for _ in camposes]).copy().astype(np.float32)).to(torch.float32)
+        R_w2c_sla_all = None
+        t_w2c_sla_all = None
+
+        assert not torch.isnan(R_c2w_sla_all).any()
+        assert not torch.isnan(t_c2w_sla_all).any()
+    else:
+        print("ln39 using identity slam poses")
+        R_w2c_sla_all = torch.eye(3).unsqueeze(0).expand(len(image_files), -1, -1)
+        t_w2c_sla_all = torch.zeros(len(image_files), 3)
+
+        R_c2w_sla_all = torch.eye(3).unsqueeze(0).expand(len(image_files), -1, -1)
+        t_c2w_sla_all = torch.zeros(len(image_files), 3)
 
     # this outputs all the infilled variables
-    pred_trans, pred_rot, pred_hand_pose, pred_betas, pred_valid = hawor_infiller(args, start_idx, end_idx, frame_chunks_all)
+    # pred_trans, pred_rot, pred_hand_pose, pred_betas, pred_valid = hawor_infiller(args, start_idx, end_idx, frame_chunks_all)
 
+    import joblib
+    pred_trans, pred_rot, pred_hand_pose, pred_betas, pred_valid = joblib.load("/home/rli14/Desktop/minnesota_cooking_074_2/world_space_res.pth")
+    import pdb
+    pdb.set_trace()
     # vis sequence for this video
     hand2idx = {
         "right": 1,

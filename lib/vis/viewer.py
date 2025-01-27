@@ -142,6 +142,11 @@ class ARCTICViewer:
 
     def render_seq(self, batch, out_folder="./render_out", floor_y=0):
         meshes_all, data = batch
+
+        # this line sets all the poses up
+        # for both the default camera
+        # scene camera
+        # and hands
         self.setup_viewer(data, floor_y)
         for mesh in meshes_all.values():
             self.v.scene.add(mesh)
@@ -155,7 +160,7 @@ class ARCTICViewer:
         v = self.v
         fps = 30
         if "imgnames" in data:
-            setup_billboard(data, v)
+            setup_billboard_and_cameras(data, v)
 
         # camera.show_path()
         v.run_animations = True  # autoplay
@@ -227,6 +232,7 @@ def construct_viewer_meshes(data, draw_edges=False, flat_shading=True):
 def setup_viewer(
     v, shared_folder_p, video, images_path, data, flag, seq_name, side_angle
 ):
+    raise NotImplementedError
     fps = 10
     cols, rows = 224, 224
     focal = 1000.0
@@ -292,16 +298,21 @@ def render_mask(v, mask_p):
     mask.save(mask_p)
 
 
-def setup_billboard(data, v):
+def setup_billboard_and_cameras(data, v):
+    # sets the viewing camera
+    # as well as the billbaord
     images_paths = data.imgnames
     K = data.K
+    print("ln298 K")
+    print(K)
     Rt = data.Rt
     rows = data.rows
     cols = data.cols
     camera = OpenCVCamera(K, Rt, cols, rows, viewer=v)
     if images_paths is not None:
+        distance_in_meters_away_from_cam = 4.0
         billboard = Billboard.from_camera_and_distance(
-            camera, 10.0, cols, rows, images_paths
+            camera, distance_in_meters_away_from_cam, cols, rows, images_paths
         )
         v.scene.add(billboard)
     v.scene.add(camera)

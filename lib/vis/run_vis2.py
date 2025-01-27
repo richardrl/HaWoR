@@ -39,7 +39,6 @@ def camera_marker_geometry(radius, height):
 
 
 def run_vis2_on_video(res_dict, res_dict2, output_pth, focal_length, image_names, R_c2w=None, t_c2w=None, interactive=True):
-
     img0 = cv2.imread(image_names[0])
     height, width, _ = img0.shape
 
@@ -148,20 +147,18 @@ def run_vis2_on_video(res_dict, res_dict2, output_pth, focal_length, image_names
             [0, 0, 1]
         ]
     )
-    #
-    # bodyframe_rotation = Rotation.from_euler("Z", 180, degrees=True).as_matrix()
-    #
-    # tmp_rot = np.eye(4)
-    # tmp_rot[:3, :3] = bodyframe_rotation
-    #
-    # tmp = np.tile(np.eye(4), (actualcam_Rt.shape[0], 1, 1))
-    # tmp[:, :3, :] = actualcam_Rt
-    #
-    # tmp = tmp @ tmp_rot
 
-    # data = viewer_utils.ViewerData(tmp[:, :3, :], actualcam_K, vis_w, vis_h, imgnames=image_names)
+    # bodyframe_rotation = Rotation.from_euler("X", 90, degrees=True).as_matrix()
+    tmp_rot = np.eye(4)
+    # tmp_rot[:3, :3] = bodyframe_rotation
+    tmp = np.tile(np.eye(4), (actualcam_Rt.shape[0], 1, 1))
+    tmp[:, :3, :] = actualcam_Rt
+    tmp = tmp @ tmp_rot
+    data = viewer_utils.ViewerData(tmp[:, :3, :], actualcam_K, vis_w, vis_h, imgnames=image_names)
     #
-    data = viewer_utils.ViewerData(viewer_Rt, viewer_K, vis_w, vis_h, imgnames=image_names)
+    # data = viewer_utils.ViewerData(viewer_Rt, viewer_K, vis_w, vis_h, imgnames=image_names)
+    # data = viewer_utils.ViewerData(viewer_Rt, viewer_K, vis_w, vis_h, imgnames=None)
+
     batch = (meshes, data)
 
     if interactive:

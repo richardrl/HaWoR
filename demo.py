@@ -72,8 +72,6 @@ if __name__ == '__main__':
 
     import joblib
     pred_trans, pred_rot, pred_hand_pose, pred_betas, pred_valid = joblib.load("/home/rli14/Desktop/minnesota_cooking_074_2/world_space_res.pth")
-    import pdb
-    pdb.set_trace()
     # vis sequence for this video
     hand2idx = {
         "right": 1,

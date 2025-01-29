@@ -19,6 +19,9 @@ from lib.vis.renderer import Renderer
 from hawor.utils.process import get_mano_faces, run_mano, run_mano_left
 from hawor.utils.rotation import angle_axis_to_rotation_matrix, rotation_matrix_to_angle_axis
 from infiller.lib.model.network import TransformerModel
+from misc_util import get_cam_wrt_world_from_olcsv
+from scipy.spatial.transform import Rotation
+
 
 def load_hawor(checkpoint_path):
     from pathlib import Path
@@ -273,7 +276,6 @@ def hawor_infiller(args, start_idx, end_idx, frame_chunks_all):
         R_w2c_sla_all, t_w2c_sla_all, R_c2w_sla_all, t_c2w_sla_all = load_slam_cam(slam_path)
     elif args.slam_mode == 1:
         # load slam from egoexo file
-        from misc_util import get_cam_wrt_world_from_olcsv
         camposes = get_cam_wrt_world_from_olcsv(len(imgfiles), os.path.basename(args.seq_folder))
 
         R_c2w_sla_all = torch.from_numpy(np.array([_[1] for _ in camposes])).to(torch.float32)
@@ -282,11 +284,11 @@ def hawor_infiller(args, start_idx, end_idx, frame_chunks_all):
         t_w2c_sla_all = None
     else:
         print("ln39 using identity slam poses")
-        R_w2c_sla_all = torch.eye(3).unsqueeze(0).expand(len(image_files), -1, -1)
-        t_w2c_sla_all = torch.zeros(len(image_files), 3)
+        R_w2c_sla_all = torch.eye(3).unsqueeze(0).expand(len(imgfiles), -1, -1)
+        t_w2c_sla_all = torch.zeros(len(imgfiles), 3)
 
-        R_c2w_sla_all = torch.eye(3).unsqueeze(0).expand(len(image_files), -1, -1)
-        t_c2w_sla_all = torch.zeros(len(image_files), 3)
+        R_c2w_sla_all = torch.eye(3).unsqueeze(0).expand(len(imgfiles), -1, -1)
+        t_c2w_sla_all = torch.zeros(len(imgfiles), 3)
     #
     # fpath = os.path.join(seq_folder, f"SLAM/hawor_slam_w_scale_{start_idx}_{end_idx}.npz")
     # R_w2c_sla_all, t_w2c_sla_all, R_c2w_sla_all, t_c2w_sla_all = load_slam_cam(fpath)
@@ -299,6 +301,7 @@ def hawor_infiller(args, start_idx, end_idx, frame_chunks_all):
     # t_c2w_sla_all = torch.zeros(R_w2c_sla_all.shape[0], 3)
 
 
+    # all of these variables are in the WORLD frame
     pred_trans = torch.zeros(2, len(imgfiles), 3)
     pred_rot = torch.zeros(2, len(imgfiles), 3)
     pred_hand_pose = torch.zeros(2, len(imgfiles), 45)
@@ -308,19 +311,39 @@ def hawor_infiller(args, start_idx, end_idx, frame_chunks_all):
     # camera space to world space
     tid = [0, 1]
     # tid is the chilarity?
+
+    # fill all default translation with a reasonable default in the world frame
+    # this will be used in this new prediction strategy to infill
+    # 15in / .381m down from the head, 9in / .22m to the left or right, 10in / .254m forward
+
+    defaultlefthand_wrt_cam = torch.Tensor([-.18, .22, .254]).unsqueeze(0).expand(len(imgfiles), -1)
+
+    defaultrighthand_wrt_cam = torch.Tensor([.18, .22, .254]).unsqueeze(0).expand(len(imgfiles), -1)
+
+    pred_trans[0, :, :] = torch.einsum("bij,bj->bi", R_c2w_sla_all, defaultlefthand_wrt_cam) + t_c2w_sla_all
+    pred_trans[1, :, :] = torch.einsum("bij,bj->bi", R_c2w_sla_all, defaultrighthand_wrt_cam) + t_c2w_sla_all
+
+    pred_rot[0, :, :] = torch.from_numpy(Rotation.from_euler("xy", [180, 270], degrees=True).as_rotvec()).to(
+        torch.float32).unsqueeze(0).expand(len(imgfiles), -1)
+    pred_rot[1, :, :] = torch.from_numpy(Rotation.from_euler("xy", [180, 90], degrees=True).as_rotvec()).to(
+        torch.float32).unsqueeze(0).expand(len(imgfiles), -1)
+
+
+    # end default translation
+
     for local_idx, hand_idx in enumerate(tid):
         # these frames are PRESENT
-        missing_frame_chunks = frame_chunks_all[hand_idx]
+        frame_chunks = frame_chunks_all[hand_idx]
 
-        if len(missing_frame_chunks) == 0:
+        if len(frame_chunks) == 0:
             continue
 
         # this block of code fills in the placeholders with the FOUND hands
-        for missing_frame_ck in missing_frame_chunks:
-            print(f"from frame {missing_frame_ck[0]} to {missing_frame_ck[-1]}")
+        for frame_ck in frame_chunks:
+            print(f"from frame {frame_ck[0]} to {frame_ck[-1]}")
 
 
-            pred_path = os.path.join(seq_folder, 'cam_space', str(hand_idx), f"{missing_frame_ck[0]}_{missing_frame_ck[-1]}.json")
+            pred_path = os.path.join(seq_folder, 'cam_space', str(hand_idx), f"{frame_ck[0]}_{frame_ck[-1]}.json")
 
             # this contains the hamer like outputs
             # so predictions in cam rframe
@@ -333,30 +356,31 @@ def hawor_infiller(args, start_idx, end_idx, frame_chunks_all):
             }
 
             # slam camera poses
-            R_c2w_sla = R_c2w_sla_all[missing_frame_ck]
-            t_c2w_sla = t_c2w_sla_all[missing_frame_ck]
+            R_c2w_sla = R_c2w_sla_all[frame_ck]
+            t_c2w_sla = t_c2w_sla_all[frame_ck]
 
             data_world = cam2world_convert(R_c2w_sla, t_c2w_sla, data_out, 'right' if hand_idx > 0 else 'left')
 
-            pred_trans[[hand_idx], missing_frame_ck] = data_world["init_trans"]
-            pred_rot[[hand_idx], missing_frame_ck] = data_world["init_root_orient"]
-            pred_hand_pose[[hand_idx], missing_frame_ck] = data_world["init_hand_pose"].flatten(-2)
-            pred_betas[[hand_idx], missing_frame_ck] = data_world["init_betas"]
+            pred_trans[[hand_idx], frame_ck] = data_world["init_trans"]
+            pred_rot[[hand_idx], frame_ck] = data_world["init_root_orient"]
+            pred_hand_pose[[hand_idx], frame_ck] = data_world["init_hand_pose"].flatten(-2)
+            pred_betas[[hand_idx], frame_ck] = data_world["init_betas"]
 
             assert not torch.any(torch.isnan(data_world["init_trans"]))
             assert not torch.any(torch.isnan(data_world["init_root_orient"]))
             assert not torch.any(torch.isnan(data_world["init_hand_pose"]))
             assert not torch.any(torch.isnan(data_world["init_betas"]))
             # only frame chunk is valid?
-            pred_valid[[hand_idx], missing_frame_ck] = 1
+            pred_valid[[hand_idx], frame_ck] = 1
 
 
-    # Note: up this point, things look fine. Zeros in places with missing actions.
-        
     # runninng fillingnet for this video
     frame_list = torch.tensor(list(range(pred_trans.size(1))))
     pred_valid = (pred_valid > 0).numpy()
     for local_idx, hand_idx in enumerate([1, 0]):
+        if hand_idx == 0:
+            print("WARNING SKIPPING LEFT HAND")
+            continue
         # pred valid is set to 1, for all the FOUND frame chunks
         # this finds the missing
         missing = ~pred_valid[hand_idx]
@@ -364,7 +388,7 @@ def hawor_infiller(args, start_idx, end_idx, frame_chunks_all):
         # frame_list is the full number of rgb frames
         # missing is a boolean describing which frames are missing, for the current hand chilarity
         frame = frame_list[missing]
-        missing_frame_chunks = parse_chunks_hand_frame(frame)
+        frame_chunks = parse_chunks_hand_frame(frame)
 
         print(f"run infiller on {idx2hand[hand_idx]} hand ...")
         # HIGH LEVEL LOGIC:
@@ -374,13 +398,13 @@ def hawor_infiller(args, start_idx, end_idx, frame_chunks_all):
         # can be a frame that was predicted by a prior prediction (it is AUTOREGRESSIVE)
         # Bottom line: ALL FRAMES ARE INFILLED.
         # Q: why is left track not infilled?
-        for missing_frame_ck_idx, missing_frame_ck in tqdm(enumerate(missing_frame_chunks)):
+        for missing_frame_ck_idx, frame_ck in tqdm(enumerate(frame_chunks)):
             start_shift = -1
-            while missing_frame_ck[0] + start_shift >= 0 and pred_valid[:, missing_frame_ck[0] + start_shift].sum() != 2:
+            while frame_ck[0] + start_shift >= 0 and pred_valid[:, frame_ck[0] + start_shift].sum() != 2:
                 start_shift -= 1  # Shift to find the previous valid frame as start
-            print(f"run infiller on frame {missing_frame_ck[0] + start_shift} to frame {min(len(imgfiles) - 1, missing_frame_ck[0] + start_shift + filling_length)}")
+            print(f"run infiller on frame {frame_ck[0] + start_shift} to frame {min(len(imgfiles) - 1, frame_ck[0] + start_shift + filling_length)}")
 
-            frame_start = missing_frame_ck[0]
+            frame_start = frame_ck[0]
             filling_net_start = max(0, frame_start + start_shift)
             filling_net_end = min(len(imgfiles)-1, filling_net_start + filling_length)
 
@@ -476,7 +500,6 @@ def hawor_infiller(args, start_idx, end_idx, frame_chunks_all):
 
     assert not torch.any(torch.isnan(pred_trans))
     assert not torch.any(torch.isnan(pred_rot))
-
 
     save_path = os.path.join(seq_folder, "world_space_res.pth")
     joblib.dump([pred_trans, pred_rot, pred_hand_pose, pred_betas, pred_valid], save_path)

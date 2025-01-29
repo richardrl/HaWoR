@@ -229,56 +229,56 @@ def construct_viewer_meshes(data, draw_edges=False, flat_shading=True):
     return meshes
 
 
-def setup_viewer(
-    v, shared_folder_p, video, images_path, data, flag, seq_name, side_angle
-):
-    raise NotImplementedError
-    fps = 10
-    cols, rows = 224, 224
-    focal = 1000.0
-
-    # setup image paths
-    regex = re.compile(r"(\d*)$")
-
-    def sort_key(x):
-        name = os.path.splitext(x)[0]
-        return int(regex.search(name).group(0))
-
-    # setup billboard
-    images_path = op.join(shared_folder_p, "images")
-    images_paths = [
-        os.path.join(images_path, f)
-        for f in sorted(os.listdir(images_path), key=sort_key)
-    ]
-    assert len(images_paths) > 0
-
-    cam_t = data[f"{flag}.object.cam_t"]
-    num_frames = min(cam_t.shape[0], len(images_paths))
-    cam_t = cam_t[:num_frames]
-    # setup camera
-    K = np.array([[focal, 0, rows / 2.0], [0, focal, cols / 2.0], [0, 0, 1]])
-    Rt = np.zeros((num_frames, 3, 4))
-    Rt[:, :, 3] = cam_t
-    Rt[:, :3, :3] = np.eye(3)
-    Rt[:, 1:3, :3] *= -1.0
-
-    camera = OpenCVCamera(K, Rt, cols, rows, viewer=v)
-    if side_angle is None:
-        billboard = Billboard.from_camera_and_distance(
-            camera, 10.0, cols, rows, images_paths
-        )
-        v.scene.add(billboard)
-    v.scene.add(camera)
-    v.run_animations = True  # autoplay
-    v.playback_fps = fps
-    v.scene.fps = fps
-    v.scene.origin.enabled = False
-    v.scene.floor.enabled = False
-    v.auto_set_floor = False
-    v.scene.floor.position[1] = -3
-    v.set_temp_camera(camera)
-    # v.scene.camera.position = np.array((0.0, 0.0, 0))
-    return v
+# def setup_viewer(
+#     v, shared_folder_p, video, images_path, data, flag, seq_name, side_angle
+# ):
+#     raise NotImplementedError
+#     fps = 10
+#     cols, rows = 224, 224
+#     focal = 1000.0
+#
+#     # setup image paths
+#     regex = re.compile(r"(\d*)$")
+#
+#     def sort_key(x):
+#         name = os.path.splitext(x)[0]
+#         return int(regex.search(name).group(0))
+#
+#     # setup billboard
+#     images_path = op.join(shared_folder_p, "images")
+#     images_paths = [
+#         os.path.join(images_path, f)
+#         for f in sorted(os.listdir(images_path), key=sort_key)
+#     ]
+#     assert len(images_paths) > 0
+#
+#     cam_t = data[f"{flag}.object.cam_t"]
+#     num_frames = min(cam_t.shape[0], len(images_paths))
+#     cam_t = cam_t[:num_frames]
+#     # setup camera
+#     K = np.array([[focal, 0, rows / 2.0], [0, focal, cols / 2.0], [0, 0, 1]])
+#     Rt = np.zeros((num_frames, 3, 4))
+#     Rt[:, :, 3] = cam_t
+#     Rt[:, :3, :3] = np.eye(3)
+#     Rt[:, 1:3, :3] *= -1.0
+#
+#     camera = OpenCVCamera(K, Rt, cols, rows, viewer=v)
+#     if side_angle is None:
+#         billboard = Billboard.from_camera_and_distance(
+#             camera, 10.0, cols, rows, images_paths
+#         )
+#         v.scene.add(billboard)
+#     v.scene.add(camera)
+#     v.run_animations = True  # autoplay
+#     v.playback_fps = fps
+#     v.scene.fps = fps
+#     v.scene.origin.enabled = False
+#     v.scene.floor.enabled = False
+#     v.auto_set_floor = False
+#     v.scene.floor.position[1] = -3
+#     v.set_temp_camera(camera)
+#     # v.scene.camera.position = np.array((0.0, 0.0, 0))
+#     return v
 
 
 def render_depth(v, depth_p):
@@ -308,9 +308,13 @@ def setup_billboard_and_cameras(data, v):
     Rt = data.Rt
     rows = data.rows
     cols = data.cols
+
+    print("ln312")
+    print(rows)
+    print(cols)
     camera = OpenCVCamera(K, Rt, cols, rows, viewer=v)
     if images_paths is not None:
-        distance_in_meters_away_from_cam = 4.0
+        distance_in_meters_away_from_cam = 2.5
         billboard = Billboard.from_camera_and_distance(
             camera, distance_in_meters_away_from_cam, cols, rows, images_paths
         )

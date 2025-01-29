@@ -12,8 +12,9 @@ from scripts.scripts_test_video.hawor_slam import hawor_slam
 from hawor.utils.process import get_mano_faces, run_mano, run_mano_left
 from lib.eval_utils.custom_utils import load_slam_cam
 from lib.vis.run_vis2 import run_vis2_on_video, run_vis2_on_video_cam
+import joblib
 
-
+# NOTE: to disable the checkerboard, uncheck "ground" in the GUI
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     parser.add_argument("--img_focal", type=float)
@@ -28,7 +29,7 @@ if __name__ == '__main__':
                         type=int,
                         choices=[0, 1, 2],
                         default=0,
-                        help='Set the level (0, 1, or 2)')
+                        help='0 run from video, 1 egoexo from takes json, 2 identity')
 
     args = parser.parse_args()
 
@@ -61,18 +62,19 @@ if __name__ == '__main__':
         assert not torch.isnan(t_c2w_sla_all).any()
     else:
         print("ln39 using identity slam poses")
-        R_w2c_sla_all = torch.eye(3).unsqueeze(0).expand(len(image_files), -1, -1)
-        t_w2c_sla_all = torch.zeros(len(image_files), 3)
+        R_w2c_sla_all = torch.eye(3).unsqueeze(0).expand(len(imgfiles), -1, -1)
+        t_w2c_sla_all = torch.zeros(len(imgfiles), 3)
 
-        R_c2w_sla_all = torch.eye(3).unsqueeze(0).expand(len(image_files), -1, -1)
-        t_c2w_sla_all = torch.zeros(len(image_files), 3)
+        R_c2w_sla_all = torch.eye(3).unsqueeze(0).expand(len(imgfiles), -1, -1)
+        t_c2w_sla_all = torch.zeros(len(imgfiles), 3)
 
     # this outputs all the infilled variables
-    # pred_trans, pred_rot, pred_hand_pose, pred_betas, pred_valid = hawor_infiller(args, start_idx, end_idx, frame_chunks_all)
+    pred_trans, pred_rot, pred_hand_pose, pred_betas, pred_valid = hawor_infiller(args, start_idx, end_idx, frame_chunks_all)
 
-    import joblib
-    pred_trans, pred_rot, pred_hand_pose, pred_betas, pred_valid = joblib.load("/home/rli14/Desktop/minnesota_cooking_074_2/world_space_res.pth")
-    # vis sequence for this video
+    if os.path.exists(os.path.join(seq_folder, "world_space_res.pth")):
+        print("ln75 loading previous infill")
+        pred_trans, pred_rot, pred_hand_pose, pred_betas, pred_valid = joblib.load(os.path.join(seq_folder, "world_space_res.pth"))
+
     hand2idx = {
         "right": 1,
         "left": 0

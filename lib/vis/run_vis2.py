@@ -148,13 +148,17 @@ def run_vis2_on_video(res_dict, res_dict2, output_pth, focal_length, image_names
         ]
     )
 
-    # bodyframe_rotation = Rotation.from_euler("X", 90, degrees=True).as_matrix()
+    bodyframe_rotation = Rotation.from_euler("Z", 0, degrees=True).as_matrix()
     tmp_rot = np.eye(4)
-    # tmp_rot[:3, :3] = bodyframe_rotation
+    tmp_rot[:3, :3] = bodyframe_rotation
+
     tmp = np.tile(np.eye(4), (actualcam_Rt.shape[0], 1, 1))
     tmp[:, :3, :] = actualcam_Rt
     tmp = tmp @ tmp_rot
-    data = viewer_utils.ViewerData(tmp[:, :3, :], actualcam_K, vis_w, vis_h, imgnames=image_names)
+
+    new_tmp = np.linalg.inv(tmp)
+
+    data = viewer_utils.ViewerData(new_tmp[:, :3, :], actualcam_K, vis_w, vis_h, imgnames=image_names)
     #
     # data = viewer_utils.ViewerData(viewer_Rt, viewer_K, vis_w, vis_h, imgnames=image_names)
     # data = viewer_utils.ViewerData(viewer_Rt, viewer_K, vis_w, vis_h, imgnames=None)

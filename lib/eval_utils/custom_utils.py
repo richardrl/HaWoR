@@ -18,7 +18,7 @@ def cam2world_convert(R_c2w_sla, t_c2w_sla, data_out, handedness):
     init_rot_mat = torch.einsum("tij,btjk->btik", R_c2w_sla, init_rot_mat)
 
     init_rot_aa = rotation_matrix_to_angle_axis(init_rot_mat)
-    init_rot_quat = angle_axis_to_quaternion(init_rot_aa)
+    # init_rot_quat = angle_axis_to_quaternion(init_rot_aa)
     # data_out["init_root_orient"] = rotation_matrix_to_angle_axis(data_out["init_root_orient"])
     # data_out["init_hand_pose"] = rotation_matrix_to_angle_axis(data_out["init_hand_pose"])
 
@@ -45,15 +45,19 @@ def cam2world_convert(R_c2w_sla, t_c2w_sla, data_out, handedness):
     # wrist wrt to root joint expressed in camera
     # it should be a constant but there are imperfections due to slam error
     # gives:
+    import pdb
+    pdb.set_trace()
     offset = init_trans - root_loc  # It is a constant, no matter what the rotation is.
 
     # -> wrist wrt to root joint
     init_trans = (
         torch.einsum("tij,btj->bti", R_c2w_sla, root_loc) # cam2world applied to root joint wrt to cam = root joint wrt to cam expressed in world
-        + t_c2w_sla[None, :] # cam wrt to world expressed in world
-        + offset # wrist wrt to root joint expressed in world
+        + t_c2w_sla[None, :] # cam wrt to world expressed in world. we have root joint wrt to world expressed in world after summing
+        + offset # wrist wrt to world expressed in world
     )
 
+    # why not:
+    # R_c2w_sla @ init_trans
     # the last two give:
     # wrist wrt to world expressed in cam
 

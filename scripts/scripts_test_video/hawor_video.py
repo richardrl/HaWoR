@@ -315,7 +315,6 @@ def hawor_infiller(args, start_idx, end_idx, frame_chunks_all):
     # fill all default translation with a reasonable default in the world frame
     # this will be used in this new prediction strategy to infill
     # 15in / .381m down from the head, 9in / .22m to the left or right, 10in / .254m forward
-
     defaultlefthand_wrt_cam = torch.Tensor([-.18, .22, .254]).unsqueeze(0).expand(len(imgfiles), -1)
 
     defaultrighthand_wrt_cam = torch.Tensor([.18, .22, .254]).unsqueeze(0).expand(len(imgfiles), -1)

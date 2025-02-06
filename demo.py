@@ -30,6 +30,7 @@ if __name__ == '__main__':
                         choices=[0, 1, 2],
                         default=0,
                         help='0 run from video, 1 egoexo from takes json, 2 identity')
+    parser.add_argument('--detector', default="hands23",type=str, help='yolo | hands23')
 
     args = parser.parse_args()
 
@@ -115,6 +116,8 @@ if __name__ == '__main__':
     hand = 'left'
     hand_idx = hand2idx[hand]
     pred_glob_l = run_mano_left(pred_trans[hand_idx:hand_idx+1, vis_start:vis_end], pred_rot[hand_idx:hand_idx+1, vis_start:vis_end], pred_hand_pose[hand_idx:hand_idx+1, vis_start:vis_end], betas=pred_betas[hand_idx:hand_idx+1, vis_start:vis_end])
+
+    # outputs hands in world frame
     left_verts = pred_glob_l['vertices'][0]
     left_dict = {
             'vertices': left_verts.unsqueeze(0),
@@ -130,7 +133,9 @@ if __name__ == '__main__':
     t_w2c_sla_all = -torch.einsum("bij,bj->bi", R_w2c_sla_all, t_c2w_sla_all)
     left_dict['vertices'] = torch.einsum('ij,btnj->btni', R_x, left_dict['vertices'].cpu())
     right_dict['vertices'] = torch.einsum('ij,btnj->btni', R_x, right_dict['vertices'].cpu())
-    
+
+    import pdb
+    pdb.set_trace()
     # Here we use aitviewer(https://github.com/eth-ait/aitviewer) for simple visualization.
     if args.vis_mode == 'world': 
         output_pth = os.path.join(seq_folder, f"vis_{vis_start}_{vis_end}")

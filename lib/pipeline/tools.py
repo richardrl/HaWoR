@@ -17,9 +17,35 @@ else:
         def __exit__(self, *args):
             pass
 
+def hawor_json_to_np_arrays(hawor_json):
+    boxes = []
+    confs = []
+    handedness = []
+    track_id = []
+    for found_hand in range(len(hawor_json)):
+        boxes.append(np.array(hawor_json[found_hand][0]))
+        confs.append(np.array(hawor_json[found_hand][2]))
+        handedness.append(np.array(1 if hawor_json[found_hand][1] == "right hand" else 0))
 
-def detect_track(imgfiles, thresh=0.5):
-    hand_det_model = YOLO('./weights/external/detector.pt')
+        # TODO: maybe right hand needs to be 0 and left hand needs to be 1
+        track_id.append(handedness[-1])
+    boxes = np.stack(boxes)
+    confs = np.stack(confs)
+    handedness = np.stack(handedness)
+    track_id = np.stack(track_id)
+    return boxes, confs, handedness, track_id
+
+
+import json
+def detect_track(imgfiles, thresh=0.5, detector='yolo'):
+    if detector == 'yolo':
+        hand_det_model = YOLO('./weights/external/detector.pt')
+    elif detector == 'hands23':
+        # just use json
+        # TODO: remove hardcoded path
+        bbox_json = json.load(open('/data/scratch-oc40/pulkitag/rli14/hamer_diffusion_policy/labels/10312024_sfu_cooking_test/bbox.json'))
+
+        # bbox_json = json.load(open('/data/scratch-oc40/pulkitag/rli14/hamer_diffusion_policy/labels/minnesota_cooking_074_2/bbox.json'))
 
     # Run
     boxes_ = []
@@ -30,16 +56,33 @@ def detect_track(imgfiles, thresh=0.5):
         ### --- Detection ---
         with torch.no_grad():
             with autocast():
-                results = hand_det_model.track(img_cv2, conf=thresh, persist=True, verbose=False)
-                
-                boxes = results[0].boxes.xyxy.cpu().numpy()
-                confs = results[0].boxes.conf.cpu().numpy()
-                handedness = results[0].boxes.cls.cpu().numpy()
-                if not results[0].boxes.id is None:
-                    track_id = results[0].boxes.id.cpu().numpy()
-                else:
-                    track_id = [-1] * len(boxes)
+                if detector == 'yolo':
+                    results = hand_det_model.track(img_cv2, conf=thresh, persist=True, verbose=False)
+                    # -> 1, 4
+                    boxes = results[0].boxes.xyxy.cpu().numpy()
+                    # -> 1
+                    confs = results[0].boxes.conf.cpu().numpy()
+                    # -> 1
+                    handedness = results[0].boxes.cls.cpu().numpy()
 
+                    # if boxes.shape[0] == 0:
+                    #     import pdb
+                    #     pdb.set_trace()
+                    if not results[0].boxes.id is None:
+                        track_id = results[0].boxes.id.cpu().numpy()
+                    else:
+                        track_id = [-1] * len(boxes)
+                else:
+                    current_bbox_json = bbox_json[f"{t+1:06d}"]
+                    if not current_bbox_json:
+                        boxes = np.zeros((0, 4))
+                        confs = np.zeros(0)
+                        handedness = np.zeros(0)
+                        track_id = [-1] * len(boxes)
+                    else:
+                        boxes, confs, handedness, track_id = hawor_json_to_np_arrays(current_bbox_json)
+                        import pdb
+                        pdb.set_trace()
                 boxes = np.hstack([boxes, confs[:, None]])
                 find_right = False
                 find_left = False

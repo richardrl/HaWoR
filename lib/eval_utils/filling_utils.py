@@ -217,7 +217,6 @@ def filling_preprocess(item):
     betas_lerped = linear_interpolation_nd(betas, valid)
     global_rot_slerped = slerp_interpolation_aa(global_rot, valid)
     hand_pose_slerped = slerp_interpolation_aa(hand_pose, valid)
-    
 
     # convert to rot6d
 

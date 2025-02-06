@@ -314,7 +314,7 @@ def setup_billboard_and_cameras(data, v):
     print(cols)
     camera = OpenCVCamera(K, Rt, cols, rows, viewer=v)
     if images_paths is not None:
-        distance_in_meters_away_from_cam = 2.5
+        distance_in_meters_away_from_cam = 1.0
         billboard = Billboard.from_camera_and_distance(
             camera, distance_in_meters_away_from_cam, cols, rows, images_paths
         )

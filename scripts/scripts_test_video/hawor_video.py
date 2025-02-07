@@ -72,7 +72,6 @@ def hawor_motion_estimation(args, start_idx, end_idx, seq_folder):
                 file.write(str(img_focal))
     
     hand_ids = np.array([tr for tr in tracks])
-
     if os.path.exists(f'{seq_folder}/tracks_{start_idx}_{end_idx}/frame_chunks_all.npy'):
         print("skip hawor motion estimation")
         frame_chunks_all = joblib.load(f'{seq_folder}/tracks_{start_idx}_{end_idx}/frame_chunks_all.npy')
@@ -131,6 +130,8 @@ def hawor_motion_estimation(args, start_idx, end_idx, seq_folder):
     faces_left = faces_right[:,[0,2,1]]
 
     frame_chunks_all = defaultdict(list)
+    import pdb
+    pdb.set_trace()
     for hand_idx in hand_ids:
         print(f"tracklet {hand_idx}:")
         trk = final_tracks[hand_idx]
@@ -464,6 +465,8 @@ def hawor_infiller(args, start_idx, end_idx, frame_chunks_all):
             atten_mask = torch.ones((B, 1, horizon),
                         device=device, dtype=torch.bool)
 
+            import pdb
+            pdb.set_trace()
             assert not torch.all(valid_atten == False), "If all valid attention is false, then all attention is true, you remove all elements and get nans"
             atten_mask[valid_atten] = False
             atten_mask = atten_mask.unsqueeze(2).repeat(1, 1, T, 1) # (B,1,T,T)

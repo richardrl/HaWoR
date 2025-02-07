@@ -45,8 +45,6 @@ def cam2world_convert(R_c2w_sla, t_c2w_sla, data_out, handedness):
     # wrist wrt to root joint expressed in camera
     # it should be a constant but there are imperfections due to slam error
     # gives:
-    import pdb
-    pdb.set_trace()
     offset = init_trans - root_loc  # It is a constant, no matter what the rotation is.
 
     # -> wrist wrt to root joint

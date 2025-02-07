@@ -25,7 +25,7 @@ def hawor_json_to_np_arrays(hawor_json):
     for found_hand in range(len(hawor_json)):
         boxes.append(np.array(hawor_json[found_hand][0]))
         confs.append(np.array(hawor_json[found_hand][2]))
-        handedness.append(np.array(1 if hawor_json[found_hand][1] == "right hand" else 0))
+        handedness.append(np.array(1 if hawor_json[found_hand][1] == "right_hand" else 0))
 
         # TODO: maybe right hand needs to be 0 and left hand needs to be 1
         track_id.append(handedness[-1])
@@ -43,9 +43,9 @@ def detect_track(imgfiles, thresh=0.5, detector='yolo'):
     elif detector == 'hands23':
         # just use json
         # TODO: remove hardcoded path
-        bbox_json = json.load(open('/data/scratch-oc40/pulkitag/rli14/hamer_diffusion_policy/labels/10312024_sfu_cooking_test/bbox.json'))
+        # bbox_json = json.load(open('/data/scratch-oc40/pulkitag/rli14/hamer_diffusion_policy/labels/10312024_sfu_cooking_test/bbox.json'))
 
-        # bbox_json = json.load(open('/data/scratch-oc40/pulkitag/rli14/hamer_diffusion_policy/labels/minnesota_cooking_074_2/bbox.json'))
+        bbox_json = json.load(open('/data/scratch-oc40/pulkitag/rli14/hamer_diffusion_policy/labels/minnesota_cooking_074_2/bbox.json'))
 
     # Run
     boxes_ = []
@@ -81,8 +81,7 @@ def detect_track(imgfiles, thresh=0.5, detector='yolo'):
                         track_id = [-1] * len(boxes)
                     else:
                         boxes, confs, handedness, track_id = hawor_json_to_np_arrays(current_bbox_json)
-                        import pdb
-                        pdb.set_trace()
+                        print(f"track_id: {track_id}")
                 boxes = np.hstack([boxes, confs[:, None]])
                 find_right = False
                 find_left = False

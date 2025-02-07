@@ -134,8 +134,6 @@ if __name__ == '__main__':
     left_dict['vertices'] = torch.einsum('ij,btnj->btni', R_x, left_dict['vertices'].cpu())
     right_dict['vertices'] = torch.einsum('ij,btnj->btni', R_x, right_dict['vertices'].cpu())
 
-    import pdb
-    pdb.set_trace()
     # Here we use aitviewer(https://github.com/eth-ait/aitviewer) for simple visualization.
     if args.vis_mode == 'world': 
         output_pth = os.path.join(seq_folder, f"vis_{vis_start}_{vis_end}")

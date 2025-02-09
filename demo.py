@@ -33,7 +33,7 @@ if __name__ == '__main__':
     parser.add_argument('--detector', default="hands23",type=str, help='yolo | hands23')
     parser.add_argument("--image_subdir", default="extracted_images", help="Use with seq_folder. Seq folder basename is always assumed to be the take name. The images might not be located directly in the take folder, so this specifies it.")
     parser.add_argument("--label_root", default=None, help="Store the labels in this root, so as to not pollute the original image folder. By default, we store HAWOR style in the image folder.")
-
+    parser.add_argument("--hands_bbox_root_dir", default=None, help="Store the hands bbox in this root.")
     args = parser.parse_args()
 
     args.seq_folder = args.seq_folder.rstrip("/")
@@ -84,7 +84,7 @@ if __name__ == '__main__':
 
     if os.path.exists(os.path.join(label_seq_folder, "world_space_res.pth")):
         print("ln75 loading previous infill")
-        pred_trans, pred_rot, pred_hand_pose, pred_betas, pred_valid = joblib.load(os.path.join(seq_folder, "world_space_res.pth"))
+        pred_trans, pred_rot, pred_hand_pose, pred_betas, pred_valid = joblib.load(os.path.join(label_seq_folder, "world_space_res.pth"))
 
     hand2idx = {
         "right": 1,

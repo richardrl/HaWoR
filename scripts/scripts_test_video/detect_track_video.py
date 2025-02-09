@@ -73,7 +73,7 @@ def detect_track_video(args):
         return start_idx, end_idx, seq_folder, imgfiles
     os.makedirs(f"{label_seq_folder}/tracks_{start_idx}_{end_idx}", exist_ok=True)
 
-    boxes_, tracks_ = detect_track(imgfiles, thresh=0.5, detector=args.detector)
+    boxes_, tracks_ = detect_track(imgfiles, thresh=0.5, detector=args.detector, hands_bbox_root_dir=args.hands_bbox_root_dir, seq_name=seq_name)
     np.save(f'{label_seq_folder}/tracks_{start_idx}_{end_idx}/model_boxes.npy', boxes_)
     np.save(f'{label_seq_folder}/tracks_{start_idx}_{end_idx}/model_tracks.npy', tracks_)
 

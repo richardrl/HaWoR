@@ -24,7 +24,8 @@ def hawor_json_to_np_arrays(hawor_json):
     track_id = []
     for found_hand in range(len(hawor_json)):
         boxes.append(np.array(hawor_json[found_hand][0]))
-        confs.append(np.array(hawor_json[found_hand][2]))
+        confs.append(np.array(1.0)) # TODO: append real confidence
+        # confs.append(np.array(hawor_json[found_hand][2]))
         handedness.append(np.array(1 if hawor_json[found_hand][1] == "right_hand" else 0))
 
         # TODO: maybe right hand needs to be 0 and left hand needs to be 1
@@ -37,15 +38,16 @@ def hawor_json_to_np_arrays(hawor_json):
 
 
 import json
-def detect_track(imgfiles, thresh=0.5, detector='yolo'):
+def detect_track(imgfiles, thresh=0.5, detector='yolo', hands_bbox_root_dir=None, seq_name=None):
     if detector == 'yolo':
         hand_det_model = YOLO('./weights/external/detector.pt')
     elif detector == 'hands23':
         # just use json
         # TODO: remove hardcoded path
         # bbox_json = json.load(open('/data/scratch-oc40/pulkitag/rli14/hamer_diffusion_policy/labels/10312024_sfu_cooking_test/bbox.json'))
-        assert NotImplementedError
-        bbox_json = json.load(open('/data/scratch-oc40/pulkitag/rli14/hamer_diffusion_policy/labels/minnesota_cooking_074_2/bbox.json'))
+        assert hands_bbox_root_dir is not None
+        assert seq_name is not None
+        bbox_json = json.load(open(f"{hands_bbox_root_dir}/{seq_name}/bbox.json"))
 
     # Run
     boxes_ = []

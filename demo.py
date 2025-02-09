@@ -31,8 +31,12 @@ if __name__ == '__main__':
                         default=0,
                         help='0 run from video, 1 egoexo from takes json, 2 identity')
     parser.add_argument('--detector', default="hands23",type=str, help='yolo | hands23')
+    parser.add_argument("--image_subdir", default="extracted_images", help="Use with seq_folder. Seq folder basename is always assumed to be the take name. The images might not be located directly in the take folder, so this specifies it.")
+    parser.add_argument("--label_root", default=None, help="Store the labels in this root, so as to not pollute the original image folder. By default, we store HAWOR style in the image folder.")
 
     args = parser.parse_args()
+
+    args.seq_folder = args.seq_folder.rstrip("/")
 
     start_idx, end_idx, seq_folder, imgfiles = detect_track_video(args)
 
@@ -72,7 +76,13 @@ if __name__ == '__main__':
     # this outputs all the infilled variables
     pred_trans, pred_rot, pred_hand_pose, pred_betas, pred_valid = hawor_infiller(args, start_idx, end_idx, frame_chunks_all)
 
-    if os.path.exists(os.path.join(seq_folder, "world_space_res.pth")):
+    seq_name = os.path.basename(seq_folder.rstrip("/"))
+    if args.label_root is None:
+        label_seq_folder = seq_folder
+    else:
+        label_seq_folder = os.path.join(args.label_root, seq_name)
+
+    if os.path.exists(os.path.join(label_seq_folder, "world_space_res.pth")):
         print("ln75 loading previous infill")
         pred_trans, pred_rot, pred_hand_pose, pred_betas, pred_valid = joblib.load(os.path.join(seq_folder, "world_space_res.pth"))
 

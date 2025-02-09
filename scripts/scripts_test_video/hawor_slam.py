@@ -56,7 +56,10 @@ def hawor_slam(args, start_idx, end_idx):
         video_folder = os.path.join(video_root, video)
 
 
-    img_folder = f'{video_folder}/extracted_images'
+    if args.image_subdir:
+        img_folder = f'{video_folderr}/{args.image_subdir}'
+    else:
+        img_folder = f'{video_folder}'
     imgfiles = natsorted(glob(f'{img_folder}/*.jpg'))
 
     # we got here

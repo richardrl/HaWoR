@@ -44,7 +44,7 @@ def detect_track(imgfiles, thresh=0.5, detector='yolo'):
         # just use json
         # TODO: remove hardcoded path
         # bbox_json = json.load(open('/data/scratch-oc40/pulkitag/rli14/hamer_diffusion_policy/labels/10312024_sfu_cooking_test/bbox.json'))
-
+        assert NotImplementedError
         bbox_json = json.load(open('/data/scratch-oc40/pulkitag/rli14/hamer_diffusion_policy/labels/minnesota_cooking_074_2/bbox.json'))
 
     # Run

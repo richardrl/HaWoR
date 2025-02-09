@@ -48,33 +48,49 @@ def hawor_motion_estimation(args, start_idx, end_idx, seq_folder):
     model.eval()
 
     if args.seq_folder:
-        img_folder = os.path.join(args.seq_folder, "extracted_images")
+        seq_folder = args.seq_folder
+        if args.image_subdir:
+            img_folder = f'{args.seq_folder}/{args.image_subdir}'
+        else:
+            img_folder = f'{args.seq_folder}'
+
+
         video = os.path.basename(args.seq_folder)
     else:
         file = args.video_path
         video_root = os.path.dirname(file)
         video = os.path.basename(file).split('.')[0]
-        img_folder = f"{video_root}/{video}/extracted_images"
+
+        if args.image_subdir:
+            img_folder = f"{video_root}/{video}/{args.image_subdir}"
+        else:
+            img_folder = f"{video_root}/{video}"
 
     imgfiles = np.array(natsorted(glob(f'{img_folder}/*.jpg')))
 
-    tracks = np.load(f'{seq_folder}/tracks_{start_idx}_{end_idx}/model_tracks.npy', allow_pickle=True).item()
+    seq_name = os.path.basename(seq_folder.rstrip("/"))
+    if args.label_root is None:
+        label_seq_folder = seq_folder
+    else:
+        label_seq_folder = os.path.join(args.label_root, seq_name)
+
+    tracks = np.load(f'{label_seq_folder}/tracks_{start_idx}_{end_idx}/model_tracks.npy', allow_pickle=True).item()
     img_focal = args.img_focal
     if img_focal is None:
         try:
-            with open(os.path.join(seq_folder, 'est_focal.txt'), 'r') as file:
+            with open(os.path.join(label_seq_folder, 'est_focal.txt'), 'r') as file:
                 img_focal = file.read()
                 img_focal = float(img_focal)
         except:
             img_focal = 600
             print(f'No focal length provided, use default {img_focal}')
-            with open(os.path.join(seq_folder, 'est_focal.txt'), 'w') as file:
+            with open(os.path.join(label_seq_folder, 'est_focal.txt'), 'w') as file:
                 file.write(str(img_focal))
     
     hand_ids = np.array([tr for tr in tracks])
-    if os.path.exists(f'{seq_folder}/tracks_{start_idx}_{end_idx}/frame_chunks_all.npy'):
+    if os.path.exists(f'{label_seq_folder}/tracks_{start_idx}_{end_idx}/frame_chunks_all.npy'):
         print("skip hawor motion estimation")
-        frame_chunks_all = joblib.load(f'{seq_folder}/tracks_{start_idx}_{end_idx}/frame_chunks_all.npy')
+        frame_chunks_all = joblib.load(f'{label_seq_folder}/tracks_{start_idx}_{end_idx}/frame_chunks_all.npy')
         return frame_chunks_all, img_focal
 
     print(f'Running hawor on {video} ...')
@@ -196,9 +212,9 @@ def hawor_motion_estimation(args, start_idx, end_idx, seq_folder):
             pred_dict={
                 k:v.tolist() for k, v in data_out.items()
             }
-            pred_path = os.path.join(seq_folder, 'cam_space', str(hand_idx), f"{frame_ck[0]}_{frame_ck[-1]}.json")
-            if not os.path.exists(os.path.join(seq_folder, 'cam_space', str(hand_idx))):
-                os.makedirs(os.path.join(seq_folder, 'cam_space', str(hand_idx)))
+            pred_path = os.path.join(label_seq_folder, 'cam_space', str(hand_idx), f"{frame_ck[0]}_{frame_ck[-1]}.json")
+            if not os.path.exists(os.path.join(label_seq_folder, 'cam_space', str(hand_idx))):
+                os.makedirs(os.path.join(label_seq_folder, 'cam_space', str(hand_idx)))
             with open(pred_path, "w") as f:
                 json.dump(pred_dict, f, indent=1)
 
@@ -227,8 +243,8 @@ def hawor_motion_estimation(args, start_idx, end_idx, seq_folder):
                 model_masks[frame_ck[img_i]] += mask
                 
     model_masks = model_masks > 0 # bool
-    np.save(f'{seq_folder}/tracks_{start_idx}_{end_idx}/model_masks.npy', model_masks)
-    joblib.dump(frame_chunks_all, f'{seq_folder}/tracks_{start_idx}_{end_idx}/frame_chunks_all.npy')
+    np.save(f'{label_seq_folder}/tracks_{start_idx}_{end_idx}/model_masks.npy', model_masks)
+    joblib.dump(frame_chunks_all, f'{label_seq_folder}/tracks_{start_idx}_{end_idx}/frame_chunks_all.npy')
     return frame_chunks_all, img_focal
 
 def hawor_infiller(args, start_idx, end_idx, frame_chunks_all):
@@ -250,13 +266,27 @@ def hawor_infiller(args, start_idx, end_idx, frame_chunks_all):
 
     if args.seq_folder:
         seq_folder = args.seq_folder
-        img_folder = os.path.join(seq_folder, "extracted_images")
+
+        if args.image_subdir:
+            img_folder = os.path.join(seq_folder, args.image_subdir)
+        else:
+            img_folder = os.path.join(seq_folder)
     else:
         file = args.video_path
         video_root = os.path.dirname(file)
         video = os.path.basename(file).split('.')[0]
         seq_folder = os.path.join(video_root, video)
-        img_folder = f"{video_root}/{video}/extracted_images"
+
+        if args.image_subdir:
+            img_folder = f"{video_root}/{video}/{args.image_subdir}"
+        else:
+            img_folder = f"{video_root}/{video}"
+
+    seq_name = os.path.basename(seq_folder.rstrip("/"))
+    if args.label_root is None:
+        label_seq_folder = seq_folder
+    else:
+        label_seq_folder = os.path.join(args.label_root, seq_name)
 
     # Previous steps
     imgfiles = np.array(natsorted(glob(f'{img_folder}/*.jpg')))
@@ -266,12 +296,14 @@ def hawor_infiller(args, start_idx, end_idx, frame_chunks_all):
 
 
     if args.slam_mode == 0:
+        raise NotImplementedError
+        # make this work with args label root
         # run slam
         print(f"using img focal {img_focal}")
-        slam_path = os.path.join(seq_folder, f"SLAM/hawor_slam_w_scale_{start_idx}_{end_idx}.npz")
+        slam_path = os.path.join(label_seq_folder, f"SLAM/hawor_slam_w_scale_{start_idx}_{end_idx}.npz")
         if not os.path.exists(slam_path):
             hawor_slam(args, start_idx, end_idx)
-        slam_path = os.path.join(seq_folder, f"SLAM/hawor_slam_w_scale_{start_idx}_{end_idx}.npz")
+        slam_path = os.path.join(label_seq_folder, f"SLAM/hawor_slam_w_scale_{start_idx}_{end_idx}.npz")
         R_w2c_sla_all, t_w2c_sla_all, R_c2w_sla_all, t_c2w_sla_all = load_slam_cam(slam_path)
     elif args.slam_mode == 1:
         # load slam from egoexo file
@@ -341,7 +373,7 @@ def hawor_infiller(args, start_idx, end_idx, frame_chunks_all):
             print(f"from frame {frame_ck[0]} to {frame_ck[-1]}")
 
 
-            pred_path = os.path.join(seq_folder, 'cam_space', str(hand_idx), f"{frame_ck[0]}_{frame_ck[-1]}.json")
+            pred_path = os.path.join(label_seq_folder, 'cam_space', str(hand_idx), f"{frame_ck[0]}_{frame_ck[-1]}.json")
 
             # this contains the hamer like outputs
             # so predictions in cam rframe
@@ -495,7 +527,7 @@ def hawor_infiller(args, start_idx, end_idx, frame_chunks_all):
     assert not torch.any(torch.isnan(pred_trans))
     assert not torch.any(torch.isnan(pred_rot))
 
-    save_path = os.path.join(seq_folder, "world_space_res.pth")
+    save_path = os.path.join(label_seq_folder, "world_space_res.pth")
     joblib.dump([pred_trans, pred_rot, pred_hand_pose, pred_betas, pred_valid], save_path)
     return pred_trans, pred_rot, pred_hand_pose, pred_betas, pred_valid
 

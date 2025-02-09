@@ -27,7 +27,11 @@ def extract_frames(video_path, output_folder):
 def detect_track_video(args):
     if args.seq_folder:
         seq_folder = args.seq_folder
-        img_folder = f'{seq_folder}/extracted_images'
+        if args.image_subdir:
+            img_folder = f'{seq_folder}/{args.image_subdir}'
+        else:
+            img_folder = f'{seq_folder}'
+
         imgfiles = natsorted(glob(f'{img_folder}/*.jpg'))
     else:
         file = args.video_path
@@ -35,7 +39,11 @@ def detect_track_video(args):
         seq = os.path.basename(file).split('.')[0]
 
         seq_folder = f'{root}/{seq}'
-        img_folder = f'{seq_folder}/extracted_images'
+        if args.image_subdir:
+            img_folder = f'{seq_folder}/{args.image_subdir}'
+        else:
+            img_folder = f'{seq_folder}'
+
         os.makedirs(seq_folder, exist_ok=True)
         os.makedirs(img_folder, exist_ok=True)
         print(f'Running detect_track on {file} ...')
@@ -55,14 +63,19 @@ def detect_track_video(args):
     start_idx = 0
     end_idx = len(imgfiles)
 
-    if os.path.exists(f'{seq_folder}/tracks_{start_idx}_{end_idx}/model_boxes.npy'):
+    seq_name = os.path.basename(seq_folder.rstrip("/"))
+    if args.label_root is None:
+        label_seq_folder = seq_folder
+    else:
+        label_seq_folder = os.path.join(args.label_root, seq_name)
+    if os.path.exists(f'{label_seq_folder}/tracks_{start_idx}_{end_idx}/model_boxes.npy'):
         print(f"skip track for {start_idx}_{end_idx}")
         return start_idx, end_idx, seq_folder, imgfiles
-    os.makedirs(f"{seq_folder}/tracks_{start_idx}_{end_idx}", exist_ok=True)
+    os.makedirs(f"{label_seq_folder}/tracks_{start_idx}_{end_idx}", exist_ok=True)
 
     boxes_, tracks_ = detect_track(imgfiles, thresh=0.5, detector=args.detector)
-    np.save(f'{seq_folder}/tracks_{start_idx}_{end_idx}/model_boxes.npy', boxes_)
-    np.save(f'{seq_folder}/tracks_{start_idx}_{end_idx}/model_tracks.npy', tracks_)
+    np.save(f'{label_seq_folder}/tracks_{start_idx}_{end_idx}/model_boxes.npy', boxes_)
+    np.save(f'{label_seq_folder}/tracks_{start_idx}_{end_idx}/model_tracks.npy', tracks_)
 
     return start_idx, end_idx, seq_folder, imgfiles
 

@@ -33,9 +33,7 @@ if __name__ == "__main__":
     parser.add_argument("--allowed_parent_tasks", nargs='+', type=str, help="What parent tasks to allow")
     parser.add_argument("--mp_idx", type=int, default=None, help="An index to use for distributed processing. The overall strategy is to split the seq folders to be distributed amongst all the different slurm jobs.")
     parser.add_argument("--mp_total", type=int, default=None, help="Total number of jobs to use for distributed processing.")
-    # parser.add_argument("--filter_completed", action="store_true", help="Searches the seq folders for world_space_res.pth and removes already completed generations")
     args = parser.parse_args()
-
 
     # do .name to get the names
     seq_folder_paths = [f for f in Path(args.image_root).iterdir() if f.is_dir()]
@@ -49,7 +47,6 @@ if __name__ == "__main__":
 
         seq_folder_paths = [dir_ for dir_ in seq_folder_paths if dir_.name in valid_take_names]
 
-    # if args.filter_completed:
     # always filter by completed
     seq_folder_paths = [dir_ for dir_ in seq_folder_paths if not os.path.exists(os.path.join(dir_, "world_space_res.pth"))]
 

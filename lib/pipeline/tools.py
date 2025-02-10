@@ -47,6 +47,7 @@ def detect_track(imgfiles, thresh=0.5, detector='yolo', hands_bbox_root_dir=None
         # bbox_json = json.load(open('/data/scratch-oc40/pulkitag/rli14/hamer_diffusion_policy/labels/10312024_sfu_cooking_test/bbox.json'))
         assert hands_bbox_root_dir is not None
         assert seq_name is not None
+        print(f"Loading bbox.json from {hands_bbox_root_dir}/{seq_name}/bbox.json")
         bbox_json = json.load(open(f"{hands_bbox_root_dir}/{seq_name}/bbox.json"))
 
     # Run
@@ -83,7 +84,7 @@ def detect_track(imgfiles, thresh=0.5, detector='yolo', hands_bbox_root_dir=None
                         track_id = [-1] * len(boxes)
                     else:
                         boxes, confs, handedness, track_id = hawor_json_to_np_arrays(current_bbox_json)
-                        print(f"track_id: {track_id}")
+                        # print(f"track_id: {track_id}")
                 boxes = np.hstack([boxes, confs[:, None]])
                 find_right = False
                 find_left = False

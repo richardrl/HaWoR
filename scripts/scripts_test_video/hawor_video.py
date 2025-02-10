@@ -495,6 +495,13 @@ def hawor_infiller(args, start_idx, end_idx, frame_chunks_all):
             atten_mask = torch.ones((B, 1, horizon),
                         device=device, dtype=torch.bool)
 
+            if torch.all(valid_atten == False):
+                # if all invalid,
+                # make it possible to attend to the first "default" hands
+                # B, 1, T
+                # make the 0th timestep true
+                valid_atten[:, :, 0] = True
+
             assert not torch.all(valid_atten == False), "If all valid attention is false for one hand track, then all attention is true, you remove all elements and get nans"
             atten_mask[valid_atten] = False
             atten_mask = atten_mask.unsqueeze(2).repeat(1, 1, T, 1) # (B,1,T,T)

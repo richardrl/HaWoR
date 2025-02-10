@@ -8,7 +8,12 @@ import numpy as np
 import joblib
 from scripts.scripts_test_video.detect_track_video import detect_track_video
 from scripts.scripts_test_video.hawor_video import hawor_motion_estimation, hawor_infiller
-from scripts.scripts_test_video.hawor_slam import hawor_slam
+
+try:
+    from scripts.scripts_test_video.hawor_slam import hawor_slam
+except ImportError:
+    print("hawor_slam not found, skipping")
+
 from hawor.utils.process import get_mano_faces, run_mano, run_mano_left
 from lib.eval_utils.custom_utils import load_slam_cam
 from lib.vis.run_vis2 import run_vis2_on_video, run_vis2_on_video_cam
@@ -159,7 +164,8 @@ if __name__ == '__main__':
         image_names = imgfiles[vis_start:vis_end]
         print(f"vis {vis_start} to {vis_end}")
         run_vis2_on_video_cam(left_dict, right_dict, output_pth, img_focal, image_names, R_w2c=R_w2c_sla_all[vis_start:vis_end], t_w2c=t_w2c_sla_all[vis_start:vis_end])
-
+    else:
+        print("Invalid vis mode, not vis'ing")
     print("finish")
 
 

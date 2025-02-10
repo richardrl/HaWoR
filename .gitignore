@@ -1,3 +1,5 @@
+slurm_*
+slurm-*
 # Project specific data and submodule
 .idea/
 /example/video_0
